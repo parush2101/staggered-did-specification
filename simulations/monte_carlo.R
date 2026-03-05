@@ -7,8 +7,10 @@
 #
 # Output:
 #   - Console: mean and variance table by method and true group
-#   - simulations/mc_summary.csv  — full summary table
-#   - simulations/mc_sampling_dist.png — sampling distributions plot
+#   - simulations/mc_summary.csv       — group-level summary table
+#   - simulations/mc_catt_estimates.csv — CATT-level mean, variance, bias
+#   - simulations/mc_sampling_dist.png  — sampling distributions by group
+#   - simulations/mc_catt_variance.png  — variance of each CATT by method
 # =============================================================================
 
 library(ggplot2)
@@ -137,5 +139,83 @@ p <- ggplot(plot_df, aes(x = estimate, fill = method, color = method)) +
 ggsave("simulations/mc_sampling_dist.png", p,
        width = 10, height = 5, dpi = 150)
 cat("Saved: simulations/mc_sampling_dist.png\n")
+
+# =============================================================================
+# 4. CATT-level summary: mean and variance for each (method, cohort, time) cell
+# =============================================================================
+catt_mean <- aggregate(estimate ~ method + cohort + time + label + tau_true,
+                       data = mc_df, FUN = mean)
+catt_var  <- aggregate(estimate ~ method + cohort + time + label + tau_true,
+                       data = mc_df, FUN = var)
+
+catt_df           <- catt_mean
+names(catt_df)[names(catt_df) == "estimate"] <- "mean_est"
+catt_df$var_est   <- catt_var$estimate
+catt_df$bias      <- round(catt_df$mean_est - catt_df$tau_true, 6)
+catt_df$mean_est  <- round(catt_df$mean_est, 6)
+catt_df$var_est   <- round(catt_df$var_est,  8)
+catt_df$method    <- factor(catt_df$method, levels = method_order)
+catt_df           <- catt_df[order(catt_df$method, catt_df$cohort, catt_df$time), ]
+rownames(catt_df) <- NULL
+
+write.csv(catt_df, "simulations/mc_catt_estimates.csv", row.names = FALSE)
+cat("Saved: simulations/mc_catt_estimates.csv\n")
+
+# =============================================================================
+# 5. Variance plot: one line per method, x = CATT, y = variance of estimate
+# =============================================================================
+
+# Order CATTs by cohort then time and build readable x-axis labels
+catt_order  <- with(catt_df[catt_df$method == "Flexible", ],
+                    label[order(cohort, time)])
+catt_labels <- gsub("D_", "C", catt_order)          # D_3_5 -> C3_5
+catt_labels <- gsub("_", ",t=", catt_labels)         # C3_5  -> C3,t=5
+
+catt_df$label_f <- factor(catt_df$label, levels = catt_order)
+
+# Cohort bands for background shading
+band_df <- data.frame(
+  cohort = c(3, 5, 7),
+  xmin   = c(0.5, 6.5, 10.5),
+  xmax   = c(6.5, 10.5, 12.5),
+  fill   = c("grey90", "grey80", "grey70")
+)
+
+p_var <- ggplot(catt_df, aes(x = label_f, y = var_est,
+                              color = method, group = method)) +
+  annotate("rect", xmin = band_df$xmin, xmax = band_df$xmax,
+           ymin = -Inf, ymax = Inf, fill = band_df$fill, alpha = 0.3) +
+  annotate("text",
+           x     = c(3.5, 8.5, 11.5),
+           y     = Inf, vjust = 1.5, size = 3.2, color = "grey30",
+           label = c("Cohort 3 (tau=2)", "Cohort 5 (tau=2)", "Cohort 7 (tau=4)")) +
+  geom_line(linewidth = 0.85) +
+  geom_point(size = 2.2) +
+  scale_x_discrete(labels = catt_labels) +
+  scale_color_manual(values = c(
+    "Flexible"    = "#E41A1C",
+    "L0 (L=0.5)"  = "#C6DBEF",
+    "L0 (L=2)"    = "#6BAED6",
+    "L0 (L=10)"   = "#2171B5",
+    "L0 (L=50)"   = "#08306B",
+    "Pooled"      = "#4DAF4A"
+  )) +
+  labs(
+    title    = expression(paste("Variance of CATT Estimates Across ", italic(S), " = 1000 Replications")),
+    subtitle = "Lower variance = more efficient estimator",
+    x        = "CATT  (cohort, calendar time)",
+    y        = "Variance of Estimated CATT",
+    color    = "Method"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    axis.text.x      = element_text(angle = 45, hjust = 1, size = 9),
+    legend.position  = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("simulations/mc_catt_variance.png", p_var,
+       width = 11, height = 5, dpi = 150)
+cat("Saved: simulations/mc_catt_variance.png\n")
 
 cat("\nDone.\n")
