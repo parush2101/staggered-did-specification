@@ -1,0 +1,12 @@
+# R
+.Rhistory
+.RData
+.Rproj.user
+*.Rproj
+
+# Output files
+simulations/*.png
+simulations/*.pdf
+
+# OS
+.DS_Store
