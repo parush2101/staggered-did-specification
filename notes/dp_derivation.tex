@@ -1,0 +1,593 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{bm}
+\usepackage{bbm}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{booktabs}
+\usepackage{setspace}
+
+\geometry{margin=1.2in}
+\onehalfspacing
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+\newtheorem{definition}{Definition}
+\newtheorem{corollary}{Corollary}
+
+\DeclareMathOperator{\RSS}{RSS}
+\DeclareMathOperator{\tr}{tr}
+\newcommand{\DP}{\mathrm{DP}}
+\newcommand{\CRP}{\mathrm{CRP}}
+\newcommand{\Normal}{\mathcal{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\1}{\mathbbm{1}}
+\newcommand{\ytd}{\tilde{y}}
+\newcommand{\Dtd}{\tilde{D}}
+\newcommand{\dtd}{\tilde{d}}
+\newcommand{\epstd}{\tilde{\varepsilon}}
+\newcommand{\Xtd}{\tilde{X}}
+
+\title{Bayesian CATT Estimation via Dirichlet Process Mixture:\\
+\large Derivation and Connection to the $\ell_0$-Penalized Estimator}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Setup and Within-Transformed Likelihood}
+% =============================================================================
+
+\subsection{The Staggered DiD Panel Model}
+
+Consider a balanced panel with $N$ units observed over $T$ time periods. Units
+belong to one of $G$ treated cohorts, indexed by their cohort entry date $g$,
+or to a never-treated group. Define the cohort-time treatment indicator
+$D_{git} = \1\{\text{unit }i\in\text{cohort }g,\; t=s\}$.
+
+The fully flexible two-way fixed effects (TWFE) model is
+\begin{equation}
+  y_{it} = \alpha_i + \lambda_t + \sum_{k=1}^{K}\theta_k D_{kit} + \varepsilon_{it},
+  \label{eq:twfe}
+\end{equation}
+where $\alpha_i$ is a unit fixed effect, $\lambda_t$ is a time fixed effect,
+$\theta_k$ is the Cohort-Average Treatment effect on the Treated (CATT) for
+cell $k = (g,t)$, and $\varepsilon_{it}\overset{iid}{\sim}\Normal(0,\sigma^2)$.
+The total number of treated (cohort, time) cells is $K$.
+
+\subsection{Within Transformation via Frisch--Waugh--Lovell}
+
+By the Frisch--Waugh--Lovell (FWL) theorem, the OLS estimates of
+$\bm{\theta} = (\theta_1,\ldots,\theta_K)'$ from \eqref{eq:twfe} are
+numerically identical to those obtained by projecting out the unit and time
+fixed effects first. Define the \emph{within transformation} (double-demeaning)
+for any variable $x_{it}$:
+\begin{equation}
+  \tilde{x}_{it} = x_{it} - \bar{x}_{i\cdot} - \bar{x}_{\cdot t} + \bar{x}_{\cdot\cdot},
+\end{equation}
+where $\bar{x}_{i\cdot}$, $\bar{x}_{\cdot t}$, and $\bar{x}_{\cdot\cdot}$
+denote unit means, time means, and the grand mean, respectively. For a balanced
+panel this operator is idempotent and exact.
+
+Applying this transformation to \eqref{eq:twfe} yields the within-transformed
+regression
+\begin{equation}
+  \ytd = \Dtd\,\bm{\theta} + \epstd, \qquad \epstd\sim\Normal(\bm{0},\,\sigma^2 I_{NT}),
+  \label{eq:within}
+\end{equation}
+where $\ytd\in\R^{NT}$ and $\Dtd\in\R^{NT\times K}$ collect the
+within-transformed outcome and CATT dummies, respectively. The rank of $\Dtd$
+is at most $K$. Model \eqref{eq:within} serves as the likelihood for all
+subsequent Bayesian inference.
+
+% =============================================================================
+\section{The Clustering Problem}
+% =============================================================================
+
+The fully flexible model treats all $K$ CATTs as distinct parameters. This is
+unbiased but may be inefficient when some CATTs share the same true effect.
+Concretely, suppose the true $\bm{\theta}^*$ has only $m^* \ll K$ distinct
+values. Then any estimator that imposes the correct partition
+$\mathcal{P}^* = \{C_1^*,\ldots,C_{m^*}^*\}$ gains efficiency because each
+group effect is estimated using more observations.
+
+The challenge is that $\mathcal{P}^*$ is unknown. The $\ell_0$-penalized greedy
+estimator solves for $\mathcal{P}$ via a hard-thresholding heuristic and
+returns a point estimate. The Bayesian approach places a prior over the space
+of all partitions of $\{1,\ldots,K\}$, allowing full uncertainty quantification
+about the grouping structure.
+
+% =============================================================================
+\section{Dirichlet Process Mixture Prior}
+% =============================================================================
+
+\subsection{Dirichlet Process}
+
+\begin{definition}[Dirichlet Process]
+  A random probability measure $G$ on $\R$ is a Dirichlet process with
+  concentration parameter $\alpha > 0$ and base measure $G_0$, written
+  $G\sim\DP(\alpha, G_0)$, if for every finite measurable partition
+  $\{B_1,\ldots,B_r\}$ of $\R$,
+  \begin{equation}
+    (G(B_1),\ldots,G(B_r)) \;\sim\; \mathrm{Dirichlet}(\alpha G_0(B_1),\ldots,\alpha G_0(B_r)).
+  \end{equation}
+\end{definition}
+
+The DP has two key properties relevant here:
+\begin{enumerate}
+  \item \textbf{Almost sure discreteness.} With probability one, $G$ is a
+    discrete measure, i.e.\ $G = \sum_{j=1}^\infty w_j\,\delta_{\phi_j}$ with
+    $w_j\geq 0$ and $\sum_j w_j = 1$.
+  \item \textbf{Clustering.} Draws from $G$ repeat with positive probability,
+    inducing ties and therefore a random partition.
+\end{enumerate}
+
+\subsection{Prior Specification}
+
+We model the $K$ CATT effects as exchangeable draws from an unknown mixing
+distribution $G$:
+\begin{align}
+  G \;&\sim\; \DP(\alpha,\, G_0), \\
+  \theta_k \mid G \;&\overset{iid}{\sim}\; G, \quad k=1,\ldots,K, \\
+  G_0 \;&=\; \Normal(\mu_0,\, \sigma_0^2).
+\end{align}
+The base measure $G_0$ is the prior for a CATT effect when it is in a singleton
+group. The concentration parameter $\alpha$ governs the expected number of
+distinct groups: $\E[m\mid K,\alpha] \approx \alpha\log(1 + K/\alpha)$.
+
+\begin{remark}
+  Small $\alpha$ concentrates mass on partitions with few groups (aggressive
+  pooling), analogous to a large $L$ in the $\ell_0$ framework. Large $\alpha$
+  spreads mass toward the fully flexible partition, analogous to $L\to 0$.
+\end{remark}
+
+% =============================================================================
+\section{Chinese Restaurant Process Representation}
+% =============================================================================
+
+Marginalising over $G$ yields the \emph{Chinese Restaurant Process} (CRP)
+distribution over partitions of $\{1,\ldots,K\}$.
+
+\subsection{Sequential Construction}
+
+The CRP($\alpha$) assigns CATTs to clusters sequentially:
+\begin{align}
+  &\text{CATT 1 starts cluster 1.}\nonumber\\
+  &\text{For }k = 2,\ldots,K:\nonumber\\
+  &\quad \Pr(z_k = c \mid z_1,\ldots,z_{k-1}) =
+    \begin{cases}
+      \dfrac{n_c}{k-1+\alpha} & \text{if cluster }c\text{ is non-empty (with }n_c\text{ members)},\\[6pt]
+      \dfrac{\alpha}{k-1+\alpha} & \text{if }c\text{ is a new cluster},
+    \end{cases}
+  \label{eq:crp}
+\end{align}
+where $z_k\in\{1,\ldots,m\}$ is the cluster label of CATT $k$ and $n_c$ is
+the number of CATTs currently assigned to cluster $c$.
+
+\subsection{Marginal Distribution over Partitions}
+
+Integrating \eqref{eq:crp} over all orderings yields the marginal probability
+of a partition $\mathcal{P} = \{C_1,\ldots,C_m\}$ of $\{1,\ldots,K\}$ into
+$m$ non-empty groups:
+\begin{equation}
+  \Pr(\mathcal{P}) = \frac{\alpha^m \prod_{l=1}^{m}(|C_l|-1)!}{\prod_{j=0}^{K-1}(\alpha+j)},
+  \label{eq:crp_partition}
+\end{equation}
+where $|C_l|$ denotes the number of CATTs in group $l$. The denominator is a
+normalising constant equal to $\alpha^{(K)} = \alpha(\alpha+1)\cdots(\alpha+K-1)$
+(rising factorial).
+
+\begin{remark}
+  The CRP prior \eqref{eq:crp_partition} gives positive probability to every
+  partition, with probability declining as $m$ increases (for fixed $\alpha$),
+  reflecting a preference for parsimonious grouping structures.
+\end{remark}
+
+% =============================================================================
+\section{Cluster-Level Parameterisation}
+% =============================================================================
+
+\subsection{From CATTs to Group Effects}
+
+Given a partition $\mathcal{P} = \{C_1,\ldots,C_m\}$ with cluster assignments
+$\bm{z} = (z_1,\ldots,z_K)'$, all CATTs in the same cluster share a common
+effect. Define the group effects $\bm{\phi} = (\phi_1,\ldots,\phi_m)'$, where
+$\theta_k = \phi_{z_k}$. The prior on $\bm{\phi}$ given $\mathcal{P}$ is
+\begin{equation}
+  \phi_l \;\overset{iid}{\sim}\; \Normal(\mu_0,\,\sigma_0^2), \quad l=1,\ldots,m.
+\end{equation}
+
+\subsection{Group Regressors}
+
+Define the \emph{aggregate group regressor} for cluster $l$ as the
+column-wise sum of within-transformed CATT dummies:
+\begin{equation}
+  \Xtd_l = \sum_{k\in C_l} \dtd_k \;\in\; \R^{NT},
+\end{equation}
+where $\dtd_k$ is the $k$-th column of $\Dtd$. Collecting these into
+$\Xtd = [\Xtd_1,\ldots,\Xtd_m]\in\R^{NT\times m}$, the within-transformed
+model \eqref{eq:within} becomes
+\begin{equation}
+  \ytd = \Xtd\,\bm{\phi} + \epstd, \qquad \epstd\sim\Normal(\bm{0},\,\sigma^2 I_{NT}).
+  \label{eq:grouped}
+\end{equation}
+This is a standard linear regression with $m$ regressors. OLS on \eqref{eq:grouped}
+gives the fully efficient estimator for $\bm{\phi}$ given the partition
+$\mathcal{P}$, exactly as computed by \texttt{estimate\_partition()} in our
+implementation.
+
+% =============================================================================
+\section{Marginal Likelihood}
+% =============================================================================
+
+\subsection{Derivation}
+
+We integrate out the group effects $\bm{\phi}$ to obtain the marginal
+likelihood of the data under partition $\mathcal{P}$.
+
+\begin{proposition}[Marginal likelihood]
+  Under model \eqref{eq:grouped} with $\bm{\phi}\sim\Normal(\mu_0\mathbf{1}_m,\,\sigma_0^2 I_m)$,
+  the marginal distribution of $\ytd$ given $\mathcal{P}$ is
+  \begin{equation}
+    \ytd \mid \mathcal{P} \;\sim\; \Normal\!\left(\mu_0\Xtd\mathbf{1}_m,\; V_{\mathcal{P}}\right),
+    \label{eq:marginal}
+  \end{equation}
+  where $V_{\mathcal{P}} = \sigma^2 I_{NT} + \sigma_0^2\Xtd\Xtd'$.
+\end{proposition}
+
+\begin{proof}
+  Since $\bm{\phi}$ and $\epstd$ are independent Gaussians,
+  $\ytd = \Xtd\bm{\phi} + \epstd$ is Gaussian with
+  \begin{align*}
+    \E[\ytd\mid\mathcal{P}] &= \Xtd\E[\bm{\phi}] = \mu_0\Xtd\mathbf{1}_m, \\
+    \mathrm{Cov}(\ytd\mid\mathcal{P}) &= \Xtd\,\mathrm{Cov}(\bm{\phi})\,\Xtd' + \sigma^2 I_{NT}
+      = \sigma_0^2\Xtd\Xtd' + \sigma^2 I_{NT}.
+  \end{align*}
+\end{proof}
+
+\subsection{Efficient Computation via Matrix Inversion Lemma}
+
+Direct computation of $V_{\mathcal{P}}^{-1}$ is $O((NT)^3)$, which is
+infeasible. Since $m\ll NT$, we apply the Woodbury identity:
+\begin{equation}
+  V_{\mathcal{P}}^{-1} = \frac{1}{\sigma^2}\left[I_{NT} - \Xtd\,\bm{\Sigma}_{\mathcal{P}}^*\,\Xtd'\,\frac{1}{\sigma^2}\right],
+\end{equation}
+where $\bm{\Sigma}_{\mathcal{P}}^*\in\R^{m\times m}$ is the posterior
+covariance of $\bm{\phi}$ (defined below). The matrix determinant lemma gives
+\begin{equation}
+  \log|V_{\mathcal{P}}| = NT\log\sigma^2 + \log\left|I_m + \kappa\,\Xtd'\Xtd\right|,
+  \qquad \kappa = \frac{\sigma_0^2}{\sigma^2}.
+\end{equation}
+The log marginal likelihood is therefore (setting $\mu_0 = 0$ for clarity):
+\begin{equation}
+  \log p(\ytd\mid\mathcal{P}) = -\frac{NT}{2}\log(2\pi\sigma^2)
+    - \frac{1}{2}\log\left|I_m + \kappa\,\Xtd'\Xtd\right|
+    - \frac{1}{2\sigma^2}\left[\ytd'\ytd - \frac{1}{\sigma^2}\ytd'\Xtd\,\bm{\Sigma}_{\mathcal{P}}^*\,\Xtd'\ytd\right].
+    \label{eq:logml}
+\end{equation}
+
+\subsection{Posterior of Group Effects}
+
+The posterior of $\bm{\phi}$ given $\mathcal{P}$ and $\ytd$ follows from
+normal-normal conjugacy:
+\begin{align}
+  \bm{\phi}\mid\ytd,\mathcal{P} &\;\sim\; \Normal\!\left(\bm{\mu}_{\mathcal{P}}^*,\;\bm{\Sigma}_{\mathcal{P}}^*\right),
+  \label{eq:phi_post}\\
+  \bm{\Sigma}_{\mathcal{P}}^* &= \left(\frac{\Xtd'\Xtd}{\sigma^2} + \frac{I_m}{\sigma_0^2}\right)^{-1},
+  \label{eq:sigma_star}\\
+  \bm{\mu}_{\mathcal{P}}^* &= \bm{\Sigma}_{\mathcal{P}}^*\left(\frac{\Xtd'\ytd}{\sigma^2} + \frac{\mu_0\mathbf{1}_m}{\sigma_0^2}\right).
+  \label{eq:mu_star}
+\end{align}
+The posterior mean $\bm{\mu}_{\mathcal{P}}^*$ is a matrix-weighted combination
+of the OLS estimate $\hat{\bm{\phi}}_{\mathrm{OLS}} = (\Xtd'\Xtd)^{-1}\Xtd'\ytd$
+and the prior mean $\mu_0\mathbf{1}_m$. As $\sigma_0^2\to\infty$ (diffuse prior),
+$\bm{\mu}_{\mathcal{P}}^*\to\hat{\bm{\phi}}_{\mathrm{OLS}}$, recovering the
+standard OLS estimator for partition $\mathcal{P}$.
+
+% =============================================================================
+\section{Posterior over Partitions}
+% =============================================================================
+
+\subsection{Joint Posterior}
+
+By Bayes' theorem, the joint posterior over the partition $\mathcal{P}$ and
+group effects $\bm{\phi}$ is
+\begin{equation}
+  p(\mathcal{P},\bm{\phi}\mid\ytd) \;\propto\;
+    p(\ytd\mid\bm{\phi},\mathcal{P})\;p(\bm{\phi}\mid\mathcal{P})\;\Pr(\mathcal{P}),
+\end{equation}
+and the marginal posterior over $\mathcal{P}$ alone is
+\begin{equation}
+  \Pr(\mathcal{P}\mid\ytd) \;\propto\; p(\ytd\mid\mathcal{P})\;\Pr(\mathcal{P}),
+  \label{eq:part_post}
+\end{equation}
+where $p(\ytd\mid\mathcal{P})$ is given by \eqref{eq:marginal} and
+$\Pr(\mathcal{P})$ by \eqref{eq:crp_partition}.
+
+\subsection{Intractability}
+
+The number of partitions of $K$ elements is the Bell number $B(K)$, which
+grows super-exponentially (e.g., $B(12)=4{,}213{,}597$). Direct enumeration
+of \eqref{eq:part_post} is therefore infeasible for $K\geq 10$. We instead
+use Markov chain Monte Carlo (MCMC) to draw samples from the posterior.
+
+% =============================================================================
+\section{Collapsed Gibbs Sampler}
+% =============================================================================
+
+We use the \emph{collapsed} Gibbs sampler of \citet{neal2000} (Algorithm 3),
+which integrates out the group effects $\bm{\phi}$ analytically and samples
+the cluster assignments $\bm{z}$ directly. This significantly reduces
+posterior correlation compared to sampling $(\bm{z}, \bm{\phi})$ jointly.
+
+\subsection{Update Step}
+
+At each iteration, we cycle through all $K$ CATTs. For CATT $k$:
+
+\begin{enumerate}
+  \item \textbf{Remove.} Temporarily remove CATT $k$ from its current cluster.
+    Let $z_{-k} = (z_1,\ldots,z_{k-1},z_{k+1},\ldots,z_K)$ denote the remaining
+    assignments. If the cluster that contained $k$ becomes empty, delete it.
+
+  \item \textbf{Sample.} Draw a new assignment $z_k$ from the conditional:
+    \begin{equation}
+      \Pr(z_k = c \mid z_{-k},\ytd) \;\propto\;
+        \begin{cases}
+          n_{-k,c}\;\times\; p(\ytd\mid z_k = c,\, z_{-k}) & \text{existing cluster }c, \\[4pt]
+          \alpha \;\times\; p(\ytd\mid z_k = c_{\mathrm{new}},\, z_{-k}) & \text{new cluster},
+        \end{cases}
+      \label{eq:gibbs}
+    \end{equation}
+    where $n_{-k,c}$ is the number of CATTs in cluster $c$ excluding CATT $k$,
+    and $p(\ytd\mid z_k = c,\, z_{-k})$ is the marginal likelihood under the
+    partition obtained by placing CATT $k$ in cluster $c$.
+
+  \item \textbf{Update.} Set $z_k$ to the drawn value and update the group
+    regressors $\Xtd$ accordingly.
+\end{enumerate}
+
+\subsection{Computing the Marginal Likelihood Ratio}
+
+The critical computation in step 2 is the ratio
+$p(\ytd\mid z_k = c,\, z_{-k})\;/\;p(\ytd\mid z_k = c',\, z_{-k})$.
+
+\paragraph{Moving to an existing cluster $c$.}
+When CATT $k$ moves to cluster $c$, the group regressor for $c$ changes from
+$\Xtd_c$ to $\Xtd_c + \dtd_k$ (a rank-1 update). The change in log marginal
+likelihood is:
+\begin{equation}
+  \Delta\log p = -\frac{1}{2}\log\frac{|I_{m} + \kappa\,\Xtd_{\mathrm{new}}'\Xtd_{\mathrm{new}}|}{|I_{m_{\mathrm{old}}} + \kappa\,\Xtd_{\mathrm{old}}'\Xtd_{\mathrm{old}}|}
+  + \frac{1}{2\sigma^2}\left[\ytd'\Xtd_{\mathrm{new}}\bm{\Sigma}_{\mathrm{new}}^*\Xtd_{\mathrm{new}}'\ytd - \ytd'\Xtd_{\mathrm{old}}\bm{\Sigma}_{\mathrm{old}}^*\Xtd_{\mathrm{old}}'\ytd\right],
+  \label{eq:delta_lml}
+\end{equation}
+where subscripts ``new'' and ``old'' refer to the design matrix and posterior
+covariance after and before the move, respectively. By the matrix determinant
+lemma and the Sherman--Morrison formula, this can be computed in
+$O(m^2)$ time from cached quantities, making each Gibbs step efficient.
+
+\paragraph{Opening a new cluster.}
+When CATT $k$ forms a new singleton cluster, $\Xtd$ gains the column $\dtd_k$
+and $m\to m+1$. The change in log marginal likelihood from equation
+\eqref{eq:logml} involves a rank-1 augmentation of $I_m + \kappa\Xtd'\Xtd$,
+which is computed via the determinant lemma:
+\begin{equation}
+  \log|I_{m+1} + \kappa\,\Xtd_{\mathrm{new}}'\Xtd_{\mathrm{new}}| =
+    \log|I_m + \kappa\,\Xtd_{\mathrm{old}}'\Xtd_{\mathrm{old}}|
+    + \log\!\left(1 + \kappa\,\dtd_k'\!\left[I_{NT} - \Xtd_{\mathrm{old}}\bm{\Sigma}_{\mathrm{old}}^*\Xtd_{\mathrm{old}}'/\sigma^2\right]\!\dtd_k\right).
+\end{equation}
+
+\subsection{Post-Sampling of Group Effects}
+
+After updating $\bm{z}$, we draw the group effects from their conditional
+posterior \eqref{eq:phi_post}--\eqref{eq:mu_star}. These draws are used to
+compute posterior summaries of $\bm{\theta}$.
+
+% =============================================================================
+\section{Posterior Quantities of Interest}
+% =============================================================================
+
+Let $\{\bm{z}^{(s)}, \bm{\phi}^{(s)}\}_{s=1}^{S}$ denote $S$ posterior draws
+after discarding a burn-in period. The following quantities are of primary
+interest.
+
+\subsection{Posterior CATT Estimates}
+
+The posterior mean of $\theta_k$ is estimated by the ergodic average:
+\begin{equation}
+  \hat{\theta}_k^{\mathrm{Bayes}} = \frac{1}{S}\sum_{s=1}^{S}\phi_{z_k^{(s)}}^{(s)}.
+  \label{eq:post_mean}
+\end{equation}
+This integrates over uncertainty in both the partition $\mathcal{P}$ and the
+group effects $\bm{\phi}$. A $(1-a)$ credible interval for $\theta_k$ is
+obtained from the empirical quantiles of $\{\phi_{z_k^{(s)}}^{(s)}\}_{s=1}^{S}$.
+
+\subsection{Posterior Partition Probabilities}
+
+The posterior probability that CATTs $j$ and $k$ share the same group is:
+\begin{equation}
+  \hat{\pi}_{jk} = \Pr(z_j = z_k\mid\ytd) \;\approx\;
+    \frac{1}{S}\sum_{s=1}^{S}\1\!\left\{z_j^{(s)} = z_k^{(s)}\right\}.
+  \label{eq:pairwise}
+\end{equation}
+The $K\times K$ matrix $\hat{\Pi} = [\hat{\pi}_{jk}]$ is called the
+\emph{posterior similarity matrix}. A point estimate of the partition (if
+required) is obtained by applying a clustering algorithm (e.g., average
+linkage) to $1 - \hat{\Pi}$.
+
+\subsection{Number of Groups}
+
+The posterior distribution over the number of distinct groups $m$ is
+approximated by the histogram of $\{m^{(s)}\}_{s=1}^{S}$ where
+$m^{(s)}$ is the number of distinct values in $\bm{z}^{(s)}$.
+
+% =============================================================================
+\section{Connection to the $\ell_0$-Penalized Estimator}
+% =============================================================================
+
+\subsection{MAP Interpretation of the $\ell_0$ Penalty}
+
+\begin{proposition}[MAP equivalence]
+  The $\ell_0$-penalized objective
+  \begin{equation}
+    Q(\mathcal{P}) = \RSS(\mathcal{P}) + L\cdot\#\{(j,k): j\text{ and }k\text{ in different groups}\}
+    \label{eq:l0_obj}
+  \end{equation}
+  is the negative log-posterior (up to a constant) under the model
+  \begin{align}
+    \ytd\mid\bm{\phi},\mathcal{P} &\;\sim\; \Normal(\Xtd\bm{\phi},\,\sigma^2 I_{NT}),\\
+    \Pr(\mathcal{P}) &\;\propto\; \exp\!\left(-\lambda\cdot\#\{(j,k): j\neq k\text{ in different groups}\}\right),
+  \end{align}
+  with $\bm{\phi}$ fixed at its OLS value and $L = \lambda\sigma^2$.
+\end{proposition}
+
+\begin{proof}
+  With $\bm{\phi}$ fixed at $\hat{\bm{\phi}}_{\mathrm{OLS}}(\mathcal{P})$, the
+  negative log-likelihood equals $\RSS(\mathcal{P})/(2\sigma^2)$ plus a constant.
+  The negative log-prior equals $\lambda\cdot\#\{\text{cross-group pairs}\}$.
+  Maximising the posterior is therefore equivalent to minimising
+  $\RSS(\mathcal{P})/(2\sigma^2) + \lambda\cdot\#\{\text{cross-group pairs}\}$,
+  which coincides with \eqref{eq:l0_obj} upon setting $L = \lambda\sigma^2$.
+\end{proof}
+
+\subsection{Relationship between $L$ and $\alpha$}
+
+Both $L$ and $\alpha$ control the degree of pooling, but through different
+functional forms.
+
+\paragraph{CRP log-prior (Bayesian).}
+From \eqref{eq:crp_partition}:
+\begin{equation}
+  \log\Pr(\mathcal{P}) = m\log\alpha + \sum_{l=1}^{m}\log(|C_l|-1)! - \log\alpha^{(K)}.
+\end{equation}
+Holding the group sizes fixed, the CRP penalises the number of groups $m$ via
+$m\log\alpha$.
+
+\paragraph{$\ell_0$ log-prior.}
+The $\ell_0$ prior corresponds to
+\begin{equation}
+  \log\Pr_{\ell_0}(\mathcal{P}) = -\lambda\sum_{j<k}\1\{z_j\neq z_k\}
+    = -\lambda\!\left[\frac{K(K-1)}{2} - \sum_{l=1}^{m}\frac{|C_l|(|C_l|-1)}{2}\right].
+\end{equation}
+This penalises the number of \emph{cross-group pairs} $\sum_{l=1}^m|C_l|(K-|C_l|)/2$,
+which is a strictly increasing function of $m$ for fixed group sizes but also
+depends on the within-group sizes. The two penalties coincide (up to a monotone
+transformation) when all groups have equal size.
+
+\begin{remark}
+  The key practical difference is that the $\ell_0$ estimator delivers a
+  single point estimate of $\mathcal{P}$ and $\bm{\theta}$, while the DP
+  mixture provides a full posterior distribution. The latter yields:
+  (i) valid credible intervals that account for partition uncertainty;
+  (ii) a posterior probability of co-clustering for each pair of CATTs
+  $(j,k)$ via \eqref{eq:pairwise}; and (iii) automatic selection of the
+  number of groups without fixing $L$ a priori.
+\end{remark}
+
+\subsection{Asymptotic Correspondence}
+
+As the panel grows ($N\to\infty$ with $T$ fixed), the marginal likelihood
+$p(\ytd\mid\mathcal{P})$ concentrates around the true partition $\mathcal{P}^*$
+at an exponential rate. In this limit, the posterior \eqref{eq:part_post}
+places all mass on $\mathcal{P}^*$, and the posterior mean \eqref{eq:post_mean}
+converges to the oracle OLS estimator under $\mathcal{P}^*$. The $\ell_0$
+greedy estimator achieves the same oracle partition for any $L$ in the interval
+\begin{equation}
+  L \;\in\; \left(\frac{\sigma^2}{N},\; N\cdot(\Delta\tau)^2\right),
+\end{equation}
+where $\Delta\tau = \min_{j\in C_l,\,k\in C_{l'}}\!|\theta_j^* - \theta_k^*|$
+is the minimum separation between true group effects.
+
+% =============================================================================
+\section{Hyperparameter Specification}
+% =============================================================================
+
+\paragraph{Base measure $G_0 = \Normal(\mu_0, \sigma_0^2)$.}
+Set $\mu_0 = 0$ (or the sample mean of $\ytd$) and $\sigma_0^2$ equal to the
+sample variance of the fully flexible CATT estimates. As $\sigma_0^2\to\infty$,
+the posterior mean $\bm{\mu}_{\mathcal{P}}^*\to\hat{\bm{\phi}}_{\mathrm{OLS}}$
+and the DP mixture recovers the frequentist OLS estimator conditional on
+$\mathcal{P}$.
+
+\paragraph{Noise variance $\sigma^2$.}
+Use the residual variance from the fully flexible model:
+$\hat\sigma^2 = \RSS_{\mathrm{flex}} / (NT - K - N - T + 2)$.
+
+\paragraph{Concentration $\alpha$.}
+A weakly informative hyperprior $\alpha\sim\mathrm{Gamma}(a_\alpha, b_\alpha)$
+with $a_\alpha = 1$, $b_\alpha = 1$ (exponential) allows $\alpha$ to be
+estimated from the data. Conditional on $m$ groups and $K$ CATTs, the
+conjugate update for $\alpha$ is available via the auxiliary variable method
+of \citet{escobar1995}.
+
+\paragraph{Correspondence with $L$.}
+As a rough calibration, choosing $\alpha = \exp(-L/\sigma^2)$ aligns the DP
+concentration with the $\ell_0$ penalty in the sense that both yield the same
+MAP partition for a single-step merge decision between two singleton groups.
+
+% =============================================================================
+\section{Summary of the Full Model}
+% =============================================================================
+
+The complete Bayesian model is:
+\begin{alignat}{3}
+  &\text{Likelihood:}\quad & \ytd &\mid \bm{\phi}, \mathcal{P} \;\sim\; \Normal(\Xtd\bm{\phi},\,\sigma^2 I_{NT}), \\
+  &\text{Group effects:}\quad & \phi_l &\overset{iid}{\sim} \Normal(\mu_0,\,\sigma_0^2), \quad l=1,\ldots,m, \\
+  &\text{Partition prior:}\quad & \Pr(\mathcal{P}) &= \frac{\alpha^m\prod_{l=1}^{m}(|C_l|-1)!}{\alpha^{(K)}}, \\
+  &\text{Concentration:}\quad & \alpha &\sim \mathrm{Gamma}(a_\alpha,\, b_\alpha).
+\end{alignat}
+
+Posterior inference proceeds via the collapsed Gibbs sampler of Section 7.
+Posterior CATT estimates \eqref{eq:post_mean} and co-clustering probabilities
+\eqref{eq:pairwise} are the primary outputs. The $\ell_0$-penalized greedy
+estimator of Sections 3--5 of the main text is recovered as the MAP of this
+model under a diffuse base measure ($\sigma_0^2\to\infty$) and the
+correspondence $L = \lambda\sigma^2$.
+
+% =============================================================================
+\bibliographystyle{plainnat}
+\begin{thebibliography}{9}
+
+\bibitem[Callaway and Sant'Anna(2021)]{callaway2021}
+Callaway, B.\ and Sant'Anna, P.\ H.\ C.\ (2021).
+\newblock Difference-in-differences with multiple time periods.
+\newblock \textit{Journal of Econometrics}, 225, 200--230.
+
+\bibitem[Escobar and West(1995)]{escobar1995}
+Escobar, M.\ D.\ and West, M.\ (1995).
+\newblock Bayesian density estimation and inference using mixtures.
+\newblock \textit{Journal of the American Statistical Association}, 90(430), 577--588.
+
+\bibitem[Ferguson(1973)]{ferguson1973}
+Ferguson, T.\ S.\ (1973).
+\newblock A Bayesian analysis of some nonparametric problems.
+\newblock \textit{The Annals of Statistics}, 1(2), 209--230.
+
+\bibitem[Neal(2000)]{neal2000}
+Neal, R.\ M.\ (2000).
+\newblock Markov chain sampling methods for Dirichlet process mixture models.
+\newblock \textit{Journal of Computational and Graphical Statistics}, 9(2), 249--265.
+
+\bibitem[Sun and Abraham(2021)]{sun2021}
+Sun, L.\ and Abraham, S.\ (2021).
+\newblock Estimating dynamic treatment effects in event studies with
+  heterogeneous treatment effects.
+\newblock \textit{Journal of Econometrics}, 225, 175--199.
+
+\bibitem[Wooldridge(2025)]{wooldridge2025}
+Wooldridge, J.\ M.\ (2025).
+\newblock Two-way fixed effects, the two-way Mundlak regression, and
+  difference-in-differences estimators.
+\newblock \textit{Empirical Economics}, 69, 2545--2587.
+
+\end{thebibliography}
+
+\end{document}
