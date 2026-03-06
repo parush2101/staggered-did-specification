@@ -28,7 +28,7 @@ $$y_{it} = \sum_{g} \sum_{t \geq g} \tau_{gt} \cdot D_{git} + \alpha_i + \lambda
 
 A **partition** $P = \{G_1, \ldots, G_m\}$ of all $K$ CATTs assigns each CATT to a group whose members share a common parameter. The penalized objective is:
 
-$$Q(P) = \text{RSS}(P) + L \cdot \underbrace{\#\{(j,k) : j \text{ and } k \text{ in different groups}\}}_{\text{number of cross-group CATT pairs}}$$
+$$Q(P) = \text{RSS}(P) + L \cdot \underbrace{{(j,k) : j \text{ and } k \text{ in different groups}\}}_{\text{number of cross-group CATT pairs}}$$
 
 - When $L = 0$: fully flexible (minimise RSS, no penalty for having $K$ distinct parameters).
 - When $L \to \infty$: fully pooled (penalty dominates, all CATTs collapsed to one group).
