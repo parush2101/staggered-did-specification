@@ -1,0 +1,566 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{mdframed}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{tikz}
+
+\geometry{margin=1.2in}
+\onehalfspacing
+
+\definecolor{boxblue}{RGB}{220, 235, 250}
+\definecolor{boxgreen}{RGB}{220, 245, 220}
+\definecolor{boxyellow}{RGB}{255, 248, 220}
+\definecolor{boxred}{RGB}{250, 225, 225}
+
+\newmdenv[backgroundcolor=boxblue, linecolor=blue!40, linewidth=1pt,
+          innertopmargin=8pt, innerbottommargin=8pt,
+          innerleftmargin=10pt, innerrightmargin=10pt]{conceptbox}
+
+\newmdenv[backgroundcolor=boxgreen, linecolor=green!50!black, linewidth=1pt,
+          innertopmargin=8pt, innerbottommargin=8pt,
+          innerleftmargin=10pt, innerrightmargin=10pt]{intuitionbox}
+
+\newmdenv[backgroundcolor=boxyellow, linecolor=orange!60, linewidth=1pt,
+          innertopmargin=8pt, innerbottommargin=8pt,
+          innerleftmargin=10pt, innerrightmargin=10pt]{examplebox}
+
+\newmdenv[backgroundcolor=boxred, linecolor=red!40, linewidth=1pt,
+          innertopmargin=8pt, innerbottommargin=8pt,
+          innerleftmargin=10pt, innerrightmargin=10pt]{warningbox}
+
+\title{\textbf{How Does a Policy Work When Everyone Starts at a Different Time?}\\[6pt]
+\large A Gentle Introduction to Bayesian Grouping in Staggered\\
+Difference-in-Differences Using the Dirichlet Process}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{The Problem in Plain English}
+% =============================================================================
+
+Imagine a government rolls out a job-training programme across many cities, but
+not all at once. Some cities start in January, others in March, and some not
+until September. A year later, an economist wants to answer the question:
+\textit{Did the programme raise workers' wages?}
+
+This sounds simple, but there is a hidden complication. Cities that started the
+programme early might see wage gains that are different from cities that started
+late --- perhaps because the early cities had better instructors, or because the
+labour market was in a different phase. In other words, \textbf{the treatment
+effect might be different for different cities, at different points in time}.
+
+Economists call each city-and-start-time combination a \textbf{cohort}, and the
+treatment effect for cohort $g$ at time $t$ is called the
+\textbf{Cohort-Average Treatment effect on the Treated}, or \textbf{CATT}
+$\tau_{gt}$. With many cohorts and many time periods, there can be dozens of
+CATTs to estimate.
+
+The core question this note addresses is:
+
+\begin{conceptbox}
+\textbf{Key Question:} Must we treat every CATT as a completely separate number,
+or can we group some of them together because they are really measuring the same
+underlying effect? And if so, \textit{how do we let the data tell us which
+CATTs belong in the same group}?
+\end{conceptbox}
+
+% =============================================================================
+\section{Two Bad Extremes}
+% =============================================================================
+
+Before introducing the solution, it helps to understand the two obvious but
+flawed approaches.
+
+\subsection{Extreme 1: Treat Every CATT Separately (Fully Flexible)}
+
+Estimate one number per cohort-time cell. If you have 3 cohorts and 8 time
+periods, that is up to 12 separate numbers to estimate.
+
+\begin{itemize}
+  \item \textbf{Upside:} You never force effects together that are actually
+    different. Each estimate is unbiased.
+  \item \textbf{Downside:} Each estimate is noisy. You are using a smaller
+    slice of the data for each number. Think of trying to estimate the average
+    height of people in a city using only 10 people vs.\ 1,000 people ---
+    the estimate with 10 people is unbiased but jumpy.
+\end{itemize}
+
+\subsection{Extreme 2: Assume All CATTs Are Identical (Fully Pooled)}
+
+Estimate one single treatment effect for everyone, ignoring when they started.
+This is what the classic two-way fixed effects (TWFE) regression does by default.
+
+\begin{itemize}
+  \item \textbf{Upside:} Very precise. You use all the data for one number.
+  \item \textbf{Downside:} If the early-starting cities really do have a
+    different effect than the late-starting cities, you are averaging across
+    apples and oranges. The estimate is \textit{biased} --- it does not
+    accurately represent the effect for any particular group.
+\end{itemize}
+
+\begin{warningbox}
+\textbf{The Bias--Variance Tradeoff:} Being flexible avoids bias but gives noisy
+estimates (high variance). Pooling gives precise estimates (low variance) but
+risks bias if the groups truly differ. We want the best of both worlds.
+\end{warningbox}
+
+\subsection{The Middle Ground}
+
+What if some CATTs are genuinely equal and some are not? Suppose cities starting
+in January and March both see a \$2/hour wage gain, while cities starting in
+September see a \$4/hour gain. Then:
+\begin{itemize}
+  \item We \textit{should} pool the January and March cohorts (same true effect,
+    pooling gains precision without bias).
+  \item We \textit{should not} pool them with the September cohort (different
+    true effect, pooling would cause bias).
+\end{itemize}
+
+The challenge is that we do not know which CATTs are equal --- that is exactly
+what we want the data to tell us.
+
+% =============================================================================
+\section{What Is a Partition?}
+% =============================================================================
+
+A \textbf{partition} is just a way of grouping the CATTs into clusters where
+every CATT in the same cluster shares one common treatment effect.
+
+\begin{examplebox}
+\textbf{Example.} Suppose we have 4 CATTs labelled $\tau_1, \tau_2, \tau_3,
+\tau_4$. Some possible partitions are:
+\begin{itemize}[nosep]
+  \item $\{\{1,2,3,4\}\}$ --- all four in one group (fully pooled).
+  \item $\{\{1\},\{2\},\{3\},\{4\}\}$ --- all separate (fully flexible).
+  \item $\{\{1,2\},\{3,4\}\}$ --- two groups of two.
+  \item $\{\{1,2,3\},\{4\}\}$ --- first three together, fourth alone.
+\end{itemize}
+With just 4 CATTs there are already 15 possible partitions. With 12 CATTs
+(our simulation) there are over 4 million!
+\end{examplebox}
+
+The problem is to find the \textit{right} partition from the data without
+checking all 4 million possibilities.
+
+% =============================================================================
+\section{The Bayesian Approach: Letting the Data Vote}
+% =============================================================================
+
+In a Bayesian approach, instead of picking one partition and declaring it
+correct, we assign a \textbf{probability} to every partition. Partitions that
+fit the data well get high probability; partitions that fit poorly get low
+probability. Our final answer averages over all partitions, weighted by their
+probabilities.
+
+\begin{conceptbox}
+\textbf{Bayesian Logic in One Sentence:}\\
+\textit{Start with a prior belief about which partitions are plausible, update
+that belief using the data, and end up with a posterior belief that reflects
+both.}
+\end{conceptbox}
+
+This requires two ingredients:
+\begin{enumerate}
+  \item \textbf{A prior} --- our initial guess about the grouping structure
+    \textit{before} looking at the data.
+  \item \textbf{A likelihood} --- how probable the data are \textit{given} a
+    particular grouping.
+\end{enumerate}
+
+For the likelihood, we use our regression model: given a grouping, the data
+follow a normal distribution around the group's shared treatment effect.
+
+For the prior, we use something called the \textbf{Dirichlet Process}.
+
+% =============================================================================
+\section{The Dirichlet Process: A Prior Over Groupings}
+% =============================================================================
+
+\subsection{The Intuition}
+
+The Dirichlet Process (DP) is a probability distribution whose outcomes are
+themselves probability distributions. That sounds abstract, so here is the key
+intuition for our setting:
+
+\begin{intuitionbox}
+\textbf{What the DP does:} It provides a prior that says ``CATTs that are
+similar in their true effects will tend to be grouped together, and the number
+of groups is determined by the data.'' You do not need to specify in advance
+how many groups there are.
+\end{intuitionbox}
+
+The DP has two inputs:
+\begin{itemize}
+  \item $\alpha$ (the \textbf{concentration parameter}): controls how many
+    groups you expect. Small $\alpha$ means few groups (like the pooled
+    estimator); large $\alpha$ means many groups (like the flexible estimator).
+  \item $G_0$ (the \textbf{base measure}): your prior belief about what a
+    treatment effect looks like for a brand-new, ungrouped CATT. We use a
+    normal distribution centred at zero.
+\end{itemize}
+
+\subsection{The Chinese Restaurant Process: A Story}
+
+The easiest way to understand the DP prior on groupings is through a
+story called the \textbf{Chinese Restaurant Process (CRP)}.
+
+Imagine a Chinese restaurant with infinitely many tables. CATTs arrive one by
+one and choose where to sit:
+
+\begin{examplebox}
+\textbf{Chinese Restaurant Story}
+\begin{enumerate}
+  \item CATT 1 arrives and always sits at Table 1 (the first table).
+  \item CATT 2 arrives. It can:
+    \begin{itemize}[nosep]
+      \item Sit with CATT 1 at Table 1, with probability $\frac{1}{1+\alpha}$.
+      \item Start a new Table 2, with probability $\frac{\alpha}{1+\alpha}$.
+    \end{itemize}
+  \item CATT 3 arrives. It sits at a table with probability proportional to
+    how many CATTs are already there, or starts a new table with probability
+    proportional to $\alpha$.
+  \item \ldots and so on.
+\end{enumerate}
+The rule is: \textbf{popular tables get more popular} (``rich get richer''),
+but there is always a chance of opening a new table.
+\end{examplebox}
+
+The seating arrangement at the end --- which CATT sits at which table --- is
+a partition of the CATTs into groups. Each table corresponds to one group, and
+all CATTs at the same table share one treatment effect.
+
+\textbf{How $\alpha$ controls grouping:}
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+$\alpha$ & Tendency & Analogy \\
+\midrule
+Small (e.g., 0.1) & Few tables, most CATTs together & Strong prior for pooling \\
+Medium (e.g., 1) & A few tables, data-driven & Weakly informative \\
+Large (e.g., 10) & Many tables, CATTs spread out & Prior for flexibility \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The Mathematical Statement}
+
+For $K$ CATTs, the CRP assigns cluster labels
+$z_1, z_2, \ldots, z_K$ sequentially. For CATT $k$:
+\begin{equation}
+  \Pr(z_k = c \mid z_1, \ldots, z_{k-1}) =
+  \begin{cases}
+    \dfrac{n_c}{k - 1 + \alpha} & \text{if table } c \text{ already has } n_c \text{ CATTs},\\[8pt]
+    \dfrac{\alpha}{k - 1 + \alpha} & \text{if } c \text{ is a new, empty table.}
+  \end{cases}
+\end{equation}
+
+Once all CATTs are seated, each table $l$ draws its shared treatment effect
+from the base measure:
+\begin{equation}
+  \phi_l \sim G_0 = \mathcal{N}(\mu_0, \sigma_0^2).
+\end{equation}
+All CATTs at table $l$ then have $\theta_k = \phi_l$.
+
+% =============================================================================
+\section{Putting It Together: The Full Model}
+% =============================================================================
+
+Here is the complete Bayesian model in plain steps:
+
+\begin{conceptbox}
+\textbf{The Full Model (top to bottom)}
+
+\medskip
+\textbf{Step 1 --- Assign CATTs to groups (CRP prior):}
+\[
+  z_k \mid z_1,\ldots,z_{k-1} \sim \text{CRP}(\alpha)
+\]
+This is the prior. It says: CATTs that sit at the same table share one effect.
+
+\medskip
+\textbf{Step 2 --- Draw a treatment effect for each table:}
+\[
+  \phi_l \sim \mathcal{N}(\mu_0,\, \sigma_0^2)
+\]
+Each table's effect is drawn from a normal distribution.
+
+\medskip
+\textbf{Step 3 --- Generate the data (likelihood):}
+\[
+  y_{it} = \alpha_i + \lambda_t + \sum_k \phi_{z_k} \cdot D_{kit} + \varepsilon_{it},
+  \qquad \varepsilon_{it} \sim \mathcal{N}(0, \sigma^2)
+\]
+The outcome follows the TWFE model, where CATTs in the same group
+share the same coefficient.
+\end{conceptbox}
+
+After collecting the data, we want to go \textit{backwards}: given the
+outcomes we observed, what is the probability of each possible grouping?
+That is the \textbf{posterior}, computed via Bayes' rule:
+\begin{equation}
+  \underbrace{\Pr(\text{grouping} \mid \text{data})}_{\text{posterior}}
+  \;\propto\;
+  \underbrace{p(\text{data} \mid \text{grouping})}_{\text{likelihood}}
+  \;\times\;
+  \underbrace{\Pr(\text{grouping})}_{\text{CRP prior}}.
+\end{equation}
+
+% =============================================================================
+\section{How Do We Compute the Posterior? The Gibbs Sampler}
+% =============================================================================
+
+We cannot enumerate all 4 million+ partitions. Instead, we use an algorithm
+called a \textbf{Gibbs sampler} to \textit{draw random samples} from the
+posterior. Think of it like exploring a city by taking many random walks ---
+you will spend more time in neighbourhoods that are large and interesting
+(high-probability partitions) and less time in dead ends (low-probability ones).
+
+\subsection{The Algorithm in Plain English}
+
+\begin{examplebox}
+\textbf{One Gibbs Iteration}
+
+Repeat the following for each CATT $k = 1, 2, \ldots, K$:
+
+\begin{enumerate}
+  \item \textbf{Kick CATT $k$ out of its current group.} (Temporarily ignore
+    where it sits.)
+
+  \item \textbf{For each possible new seat} (every existing group, plus a brand
+    new one):
+    \begin{itemize}[nosep]
+      \item Compute: how much does the data fit if I put CATT $k$ here?
+      \item Compute: how popular is this table already? (CRP weight)
+      \item Multiply these two numbers together.
+    \end{itemize}
+
+  \item \textbf{Randomly assign CATT $k$} to one of the seats, with probability
+    proportional to the numbers computed above.
+
+  \item After all $K$ CATTs have been updated: \textbf{draw a new treatment
+    effect $\phi_l$} for each group from its posterior (using the data from
+    that group only).
+\end{enumerate}
+\end{examplebox}
+
+After many iterations, the sequence of groupings visited by the algorithm
+forms a representative sample from the posterior. We then read off the answers
+from this sample.
+
+\subsection{Why Does the Data Fit Calculation Work?}
+
+The key step is: \textit{how much does the data fit if CATT $k$ is in group $c$?}
+
+The answer uses our normal regression model. When CATT $k$ joins group $c$,
+the data from CATT $k$ are now explained by the same coefficient $\phi_c$ as
+all other CATTs in group $c$. If CATT $k$'s data look like they have a similar
+effect to the rest of group $c$, the data fit well (high probability). If
+CATT $k$ looks very different, the fit is poor (low probability).
+
+Formally, we integrate out the group effect $\phi_c$ to get the
+\textbf{marginal likelihood}:
+\begin{equation}
+  p(\tilde{y} \mid \text{CATT } k \text{ in group } c)
+  = \int p(\tilde{y} \mid \phi_c,\, \text{CATT } k \text{ in group } c)\;
+          p(\phi_c)\; d\phi_c,
+\end{equation}
+where $\tilde{y}$ is the within-transformed outcome (after removing unit and
+time fixed effects). Because the prior and likelihood are both normal, this
+integral has a closed-form solution --- no numerical approximation needed.
+
+% =============================================================================
+\section{What Do We Get Out?}
+% =============================================================================
+
+After running the Gibbs sampler for $S$ iterations, we have $S$ draws of the
+grouping structure and $S$ draws of the group effects. From these we extract:
+
+\subsection{Posterior Mean of Each CATT}
+
+For each CATT $k$, the posterior mean treatment effect is:
+\begin{equation}
+  \hat{\theta}_k = \frac{1}{S}\sum_{s=1}^{S} \phi_{z_k^{(s)}}^{(s)},
+\end{equation}
+where $z_k^{(s)}$ is the group that CATT $k$ belongs to in draw $s$, and
+$\phi_{z_k^{(s)}}^{(s)}$ is the corresponding group effect. This automatically
+averages over uncertainty in the grouping.
+
+\subsection{Credible Intervals}
+
+A 95\% credible interval for $\theta_k$ is simply the 2.5th and 97.5th
+percentiles of $\{\phi_{z_k^{(s)}}^{(s)}\}_{s=1}^{S}$. Unlike classical
+confidence intervals, this has the direct interpretation: \textit{``There is a
+95\% probability that the true CATT lies in this range.''}
+
+\subsection{Probability That Two CATTs Are Equal}
+
+We can directly answer: \textit{What is the probability that cohort 3 and
+cohort 5 have the same treatment effect?}
+\begin{equation}
+  \hat{\pi}_{jk} = \Pr(\theta_j = \theta_k \mid \text{data})
+  \approx \frac{1}{S}\sum_{s=1}^{S} \mathbf{1}\{z_j^{(s)} = z_k^{(s)}\}.
+\end{equation}
+This is just the fraction of draws in which CATTs $j$ and $k$ end up in the
+same group. If $\hat{\pi}_{jk} \approx 1$, the data strongly suggest they
+should be pooled. If $\hat{\pi}_{jk} \approx 0$, the data say keep them
+separate.
+
+\subsection{Posterior Distribution Over Number of Groups}
+
+We can also plot how many groups appeared in each draw. This tells us not just
+``there are 2 groups'' but rather ``there is a 90\% chance of 2 groups and a
+10\% chance of 3 groups.''
+
+% =============================================================================
+\section{A Numerical Example}
+% =============================================================================
+
+To make this concrete, here are the results from running 100 Gibbs iterations
+on our simulated data. Recall the true setup:
+\begin{itemize}
+  \item \textbf{Group A} (10 CATTs): cohorts entering at $t=3$ and $t=5$,
+    true effect $\tau = 2$.
+  \item \textbf{Group B} (2 CATTs): cohort entering at $t=7$,
+    true effect $\tau = 4$.
+\end{itemize}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Comparison & $\hat\pi$ (posterior co-clustering prob.) & Verdict \\
+\midrule
+Two CATTs, both in Group A ($\tau=2$) & 0.954 & Almost always pooled \\
+Two CATTs, both in Group B ($\tau=4$) & 0.990 & Almost always pooled \\
+One CATT from A, one from B           & 0.000 & Never incorrectly merged \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The posterior mean number of groups is 2.1, closely matching the true value of
+2. The posterior densities for each CATT concentrate tightly around the true
+effect values (2 or 4), with negligible mass elsewhere.
+
+% =============================================================================
+\section{How Is This Different From the $\ell_0$ Greedy Approach?}
+% =============================================================================
+
+Both the DP mixture estimator and the $\ell_0$ greedy estimator try to find
+the right grouping of CATTs. The table below summarises the key differences:
+
+\begin{center}
+\begin{tabular}{p{4.5cm} p{4.5cm} p{4.5cm}}
+\toprule
+ & \textbf{$\ell_0$ Greedy} & \textbf{DP Mixture (Bayesian)} \\
+\midrule
+\textbf{Output} & One best-guess partition & Full distribution over partitions \\
+\addlinespace
+\textbf{Uncertainty} & None --- hard decision & Full posterior uncertainty \\
+\addlinespace
+\textbf{Tuning parameter} & $L$ (penalty per CATT pair) & $\alpha$ (DP concentration) \\
+\addlinespace
+\textbf{Number of groups} & Fixed by $L$ & Determined by data \\
+\addlinespace
+\textbf{Computation} & Very fast ($O(K^3)$ merges) & Slower (MCMC iterations) \\
+\addlinespace
+\textbf{Credible intervals} & Not available & Naturally produced \\
+\addlinespace
+\textbf{Conceptual connection} & MAP estimate & Full posterior \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{intuitionbox}
+\textbf{Analogy:} The $\ell_0$ greedy method is like a detective who looks at
+all the evidence and announces a single verdict: ``These CATTs are equal, those
+are not.'' The DP Bayesian method is like a jury that assigns a probability to
+each possible verdict and can say: ``We are 95\% confident these two CATTs
+belong in the same group.''
+\end{intuitionbox}
+
+% =============================================================================
+\section{Limitations and Things to Keep in Mind}
+% =============================================================================
+
+\begin{enumerate}
+
+  \item \textbf{Convergence.} The Gibbs sampler needs enough iterations to
+    explore the posterior thoroughly. With only 100 iterations on a problem
+    with 12 CATTs and a clear true partition, it works well. For larger or
+    noisier problems, more iterations (and a burn-in period to discard early
+    draws) may be needed.
+
+  \item \textbf{Choosing $\alpha$.} The concentration parameter $\alpha$
+    influences the prior probability of how many groups exist. In practice,
+    you can put a prior on $\alpha$ itself and let the data update it, rather
+    than fixing it by hand.
+
+  \item \textbf{Choosing $G_0$.} The base measure $G_0 = \mathcal{N}(\mu_0,
+    \sigma_0^2)$ encodes your prior belief about the size of treatment effects
+    for any new group. Setting $\sigma_0^2$ very large (diffuse) makes the
+    prior non-informative and lets the data dominate.
+
+  \item \textbf{Pre-trends.} Like all DiD methods, the Bayesian DP approach
+    requires that in the absence of treatment, all cohorts would have followed
+    parallel trends. This assumption cannot be tested with post-treatment data.
+
+  \item \textbf{Not a free lunch.} The Bayesian approach quantifies uncertainty
+    about the grouping structure, but it does not eliminate it. If the true
+    treatment effects are very close together (e.g., 2.0 vs.\ 2.1), even a
+    Bayesian model with lots of data may not reliably separate them.
+
+\end{enumerate}
+
+% =============================================================================
+\section{Summary}
+% =============================================================================
+
+Here is the complete story in five bullet points:
+
+\begin{itemize}
+
+  \item In staggered DiD, each cohort-time cell has its own treatment effect
+    (CATT). Estimating all of them separately is unbiased but noisy; pooling
+    them all is precise but biased.
+
+  \item A smarter approach: group CATTs that truly share the same effect, and
+    let the data determine the grouping. This is the \textit{model specification}
+    problem.
+
+  \item The Dirichlet Process provides a prior over all possible groupings,
+    governed by one intuitive parameter $\alpha$. The Chinese Restaurant Process
+    story explains how groups form: popular groups attract more members, but new
+    groups can always be opened.
+
+  \item A Gibbs sampler explores the posterior over groupings by updating each
+    CATT's group assignment one at a time, balancing how well the data fit with
+    how many CATTs are already in each group.
+
+  \item The output is not just one estimated partition but a full probability
+    distribution: which CATTs likely share an effect, how many groups probably
+    exist, and how certain we are about each CATT's treatment effect.
+
+\end{itemize}
+
+\bigskip
+\noindent\textbf{Further Reading}
+\begin{itemize}[nosep]
+  \item Callaway \& Sant'Anna (2021) --- how to estimate CATTs in staggered DiD.
+  \item Neal (2000) --- the collapsed Gibbs sampler for DP mixture models.
+  \item M\"{u}ller \& Quintana (2004) --- a friendly introduction to Bayesian
+    nonparametric methods for applied researchers.
+\end{itemize}
+
+\end{document}
