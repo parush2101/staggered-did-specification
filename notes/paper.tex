@@ -605,55 +605,20 @@ We compare four estimators:
     $\alpha = 1$, $\sigma_0^2 = 9$.
 \end{enumerate}
 
-\subsection{Single-Sample Results}
-
-Table~\ref{tab:single} reports the number of estimated groups, RSS, and RMSE
-(relative to the true CATTs) for a single dataset with $\texttt{seed}=42$.
-
-\begin{table}[ht]
-  \centering
-  \caption{Single-sample results ($N=400$, $T=8$, $K=12$, seed = 42)}
-  \label{tab:single}
-  \begin{tabular}{lccc}
-    \toprule
-    Method & \# Groups & RSS & RMSE \\
-    \midrule
-    Flexible     & 12 & 709.62 & 0.0584 \\
-    L0 ($L=0.5$) &  2 & 711.23 & 0.0153 \\
-    Pooled       &  1 & 1083.01 & 0.7963 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-The greedy algorithm with $L=0.5$ recovers exactly 2 groups, matching the
-true partition. The RMSE falls from 0.058 (Flexible) to 0.015 (L0), a
-fourfold efficiency gain. The pooled estimator's RMSE is 0.796, reflecting
-the large bias from forcing together CATTs with effects of 2 and 4.
-
-Figure~\ref{fig:catts} shows the CATT estimates for the Flexible, L0 ($L=0.5$),
-and Pooled estimators. The L0 estimates are nearly flat within each true group
-and close to the truth, while the Flexible estimates show sampling variation
-around the same values and the Pooled estimates are biased for both groups.
-
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{../simulations/catt_estimates.png}
-  \caption{CATT estimates by cohort. Black dashed line = true effect.
-    The L0 ($L=0.5$) estimator correctly pools cohorts 3 and 5 into Group A
-    ($\hat\tau=2$) and keeps cohort 7 as Group B ($\hat\tau=4$).}
-  \label{fig:catts}
-\end{figure}
-
 \subsection{Monte Carlo Results}
 
-We run $S = 1{,}000$ independent replications of the DGP and compute the
-mean, variance, and bias of estimated ATTs for each method and each true
-treatment group. Table~\ref{tab:mc} reports the results.
+We run $S = 500$ independent replications of the DGP, applying all four
+estimators to each draw. For the DP Gibbs sampler we run 100 iterations per
+replication and record the posterior mean of each CATT, then average within
+true group. Table~\ref{tab:mc} reports the mean, variance, and bias of the
+resulting group-level ATT estimates across replications.
 
 \begin{table}[ht]
   \centering
-  \caption{Monte Carlo results ($S=1{,}000$ replications). Mean, variance,
-    and bias of estimated ATT, averaged within each true treatment group.}
+  \caption{Monte Carlo results ($S=500$ replications). Mean, variance,
+    and bias of estimated ATT, averaged within each true treatment group.
+    For DP Bayes, ``mean'' and ``variance'' refer to those of the
+    posterior group mean across replications.}
   \label{tab:mc}
   \begin{tabular}{lcccccc}
     \toprule
@@ -662,93 +627,59 @@ treatment group. Table~\ref{tab:mc} reports the results.
     \cmidrule(lr){2-4}\cmidrule(lr){5-7}
     Method & Mean & Variance & Bias & Mean & Variance & Bias \\
     \midrule
-    Flexible     & 1.999 & 0.00161 & $-$0.001 & 3.999 & 0.00320 & $-$0.001 \\
-    L0 ($L=0.5$) & 1.999 & 0.00139 & $-$0.001 & 4.000 & 0.00232 & $-$0.000 \\
-    Pooled       & 2.599 & 0.00112 & $+$0.599 & 2.599 & 0.00112 & $-$1.401 \\
+    Flexible     & 1.999 & 0.00168 & $-$0.001 & 4.001 & 0.00296 & $+$0.001 \\
+    L0 ($L=0.5$) & 1.999 & 0.00144 & $-$0.001 & 4.002 & 0.00226 & $+$0.002 \\
+    DP Bayes     & 1.999 & 0.00144 & $-$0.001 & 4.001 & 0.00227 & $+$0.001 \\
+    Pooled       & 2.600 & 0.00119 & $+$0.600 & 2.600 & 0.00119 & $-$1.400 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Two findings stand out. First, the Flexible estimator is unbiased but has
-the highest variance among all estimators. Second, L0 ($L=0.5$) is also
-unbiased (bias $< 0.002$) and achieves strictly lower variance than Flexible
-in both groups --- a 13\% reduction in Group A and a 27\% reduction in
-Group B --- confirming the efficiency gain from correct pooling. The Pooled
-estimator has the lowest variance of all but at the cost of substantial bias:
-0.60 for Group A and $-$1.40 for Group B, rendering it unsuitable for
-policy inference.
+Three findings stand out. First, the Flexible estimator is unbiased but has
+the highest variance among the unbiased estimators. Second, both L0 ($L=0.5$)
+and DP Bayes are also unbiased (bias $< 0.002$ in every cell) and achieve
+strictly lower variance than Flexible in both groups --- a 14\% reduction in
+Group A and a 24\% reduction in Group B --- confirming the efficiency gain
+from correct pooling. The variance of L0 and DP Bayes are nearly identical,
+reflecting the MAP equivalence established in Proposition~\ref{prop:map}.
+Third, the Pooled estimator has the lowest variance of all but at the cost
+of substantial bias: $+$0.60 for Group A and $-$1.40 for Group B, rendering
+it unsuitable for policy inference.
 
-Figure~\ref{fig:variances} shows the variance of each CATT estimate across
-replications. The efficiency advantage of L0 ($L=0.5$) over Flexible is
-consistent across all 12 CATTs, with the largest gains for the Group B cells
-(cohort 7) where pooling is most informative.
-
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{../simulations/mc_catt_variance.png}
-  \caption{Variance of CATT estimates across $S=1{,}000$ replications.
-    Shaded bands indicate cohort membership. L0 ($L=0.5$) lies substantially
-    below Flexible at all 12 CATTs, confirming consistent efficiency gains
-    from correct pooling.}
-  \label{fig:variances}
-\end{figure}
-
-Figure~\ref{fig:sampling} plots the sampling distributions of the ATT
-estimates. The Flexible and L0 ($L=0.5$) distributions are both centred on
-the true effects; Pooled is clearly biased.
+Figure~\ref{fig:sampling} plots the sampling distributions of the group-level
+ATT estimates. Flexible, L0, and DP Bayes are all centred on the true effects;
+Pooled is clearly shifted. The L0 and DP Bayes distributions are visibly
+narrower than the Flexible distribution, confirming the variance gains in
+Table~\ref{tab:mc}.
 
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\textwidth]{../simulations/mc_sampling_dist.png}
-  \caption{Sampling distributions of ATT estimates across $S=1{,}000$
-    replications, by true treatment group. Black dashed line = true effect.
-    L0 ($L=0.5$) closely tracks Flexible but with a narrower distribution;
-    Pooled is substantially shifted away from the true effects.}
+  \caption{Sampling distributions of group-level ATT estimates across
+    $S=500$ replications, by true treatment group. Black dashed line = true
+    effect. L0 ($L=0.5$) and DP Bayes closely track Flexible but with
+    narrower distributions; Pooled is substantially shifted away from the
+    true effects.}
   \label{fig:sampling}
 \end{figure}
 
-\subsection{Bayesian DP Results}
-
-We run 100 Gibbs iterations on the original dataset ($\texttt{seed}=42$)
-with $\alpha=1$ and $\sigma_0^2=9$. Figure~\ref{fig:dp} shows the posterior
-distributions of all 12 CATT effects, faceted by cohort.
-
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{../simulations/dp_posterior.png}
-  \caption{Posterior distributions of CATT effects from the DP Gibbs sampler
-    (100 iterations, $\alpha=1$). Each curve is the posterior density of one
-    CATT. Black dashed line = true effect. All posteriors concentrate tightly
-    around the true values.}
-  \label{fig:dp}
-\end{figure}
-
-The posterior concentrates tightly around the true effects in all cohorts.
-The key co-clustering statistics are:
-\begin{itemize}[nosep]
-  \item $\hat\pi_{jk} = 0.954$ for any two CATTs both in Group A ($\tau^*=2$).
-  \item $\hat\pi_{jk} = 0.990$ for the two Group B CATTs ($\tau^*=4$).
-  \item $\hat\pi_{jk} = 0.000$ for any cross-group pair.
-\end{itemize}
-The posterior mean number of groups is 2.1 (mode = 2), converging to the
-true partition by iteration 20.
-
 \subsection{Discussion}
 
-The simulation results confirm three main takeaways. \textit{First},
-the $\ell_0$ greedy estimator with $L=0.5$ reliably recovers the true
-two-group partition in every single-sample draw. The efficiency gain over
-the fully flexible estimator is substantial (13\% in Group A, 27\% in Group B)
-and consistent across all 1{,}000 replications. \textit{Second}, the penalty
-parameter $L$ must be chosen sensibly: values that are too large risk
-over-pooling, while values that are too small leave the estimator equivalent
-to the fully flexible approach. In practice, researchers should examine the
-solution path (number of groups vs.\ $L$) to identify a stable plateau,
-as the correct partition corresponds to a wide flat region of the path.
-\textit{Third}, the DP Bayesian estimator delivers essentially the same point
-estimates as the frequentist $\ell_0$ approach, but adds full posterior
-uncertainty over the grouping without requiring the researcher to choose
-$L$ explicitly.
+The simulation results confirm four main takeaways. \textit{First}, both the
+$\ell_0$ greedy estimator and the DP Bayes estimator recover the true two-group
+partition reliably across all 500 replications. \textit{Second}, the efficiency
+gains from correct pooling are substantial and nearly identical for the two
+approaches: roughly 14\% variance reduction in Group A and 24\% in Group B
+relative to the fully flexible estimator. This mirrors the MAP equivalence
+of Proposition~\ref{prop:map}. \textit{Third}, neither approach introduces
+any meaningful bias: the bias of L0 and DP Bayes is below 0.002 in every
+cell, compared with biases of $+$0.60 and $-$1.40 for the pooled estimator.
+\textit{Fourth}, the penalty parameter $L$ for the $\ell_0$ estimator must be
+chosen sensibly. In practice, researchers should examine the solution path
+(number of groups vs.\ $L$) to identify a stable plateau, as the correct
+partition corresponds to a wide flat region of the path. The DP approach
+sidesteps this choice by marginalising over partitions, making it attractive
+when prior guidance on $L$ is unavailable.
 
 % =============================================================================
 % 7. CONCLUSION

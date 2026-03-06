@@ -1,0 +1,9 @@
+"Method","True_Group","True_tau","Mean_Est","Var_Est","Bias"
+"Flexible","Group A (tau=2)",2,1.9994,0.001681,-6e-04
+"Flexible","Group B (tau=4)",4,4.001,0.002963,0.001
+"L0 (L=0.5)","Group A (tau=2)",2,1.9991,0.001441,-9e-04
+"L0 (L=0.5)","Group B (tau=4)",4,4.0019,0.002255,0.0019
+"DP Bayes","Group A (tau=2)",2,1.9986,0.001443,-0.0014
+"DP Bayes","Group B (tau=4)",4,4.0008,0.002265,8e-04
+"Pooled","Group A (tau=2)",2,2.5998,0.001186,0.5998
+"Pooled","Group B (tau=4)",4,2.5998,0.001186,-1.4002
