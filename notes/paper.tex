@@ -1,0 +1,815 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{bm}
+\usepackage{bbm}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{footnote}
+
+\geometry{margin=1.2in}
+\doublespacing
+
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = blue!60!black,
+  citecolor  = blue!60!black,
+  urlcolor   = blue!60!black
+}
+
+\newtheorem{assumption}{Assumption}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+\newtheorem{definition}{Definition}
+
+\DeclareMathOperator{\RSS}{RSS}
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
+\newcommand{\DP}{\mathrm{DP}}
+\newcommand{\Normal}{\mathcal{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\1}{\mathbbm{1}}
+\newcommand{\ytd}{\tilde{y}}
+\newcommand{\Dtd}{\tilde{D}}
+\newcommand{\Xtd}{\tilde{X}}
+
+\title{\textbf{Data-Driven Model Specification in Staggered
+       Difference-in-Differences:\\
+       An $\ell_0$-Penalized and Bayesian Approach}%
+       \thanks{We thank seminar participants for helpful comments.
+       All code is available at
+       \url{https://github.com/parush2101/staggered-did-specification}.}}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================================
+% ABSTRACT
+% =============================================================================
+\begin{abstract}
+  \noindent
+  In staggered difference-in-differences (DiD) designs, units enter treatment at
+  different calendar times, generating a set of Cohort-Average Treatment effects
+  on the Treated (CATTs) --- one for each cohort-time cell. The standard
+  fully flexible estimator treats every CATT as a distinct parameter, which is
+  unbiased but inefficient when some CATTs share the same true effect.
+  The fully pooled two-way fixed effects (TWFE) estimator, by contrast, is
+  efficient but biased when heterogeneity is genuine.
+  This paper proposes a data-driven model specification approach that occupies
+  the middle ground. We first develop a frequentist solution based on an
+  $\ell_0$ penalty on pairwise CATT differences: a greedy merging algorithm
+  recovers the correct grouping of CATTs in $O(K^3)$ time, where $K$ is the
+  number of CATT cells.
+  We then develop a Bayesian counterpart using a Dirichlet Process (DP) mixture
+  prior on CATT effects, implemented via a collapsed Gibbs sampler.
+  The Bayesian approach yields full posterior uncertainty over the grouping
+  structure, including co-clustering probabilities for every pair of CATTs.
+  A simulation study with a known two-group truth demonstrates that both
+  approaches recover the correct specification across a wide range of
+  parameters, achieving efficiency gains over the fully flexible estimator
+  without the bias of the pooled estimator.
+  The two methods are formally connected: the $\ell_0$ greedy estimator is
+  the maximum a posteriori (MAP) estimator under the DP prior.
+\end{abstract}
+
+\bigskip
+\noindent\textbf{Keywords:} difference-in-differences, staggered treatment,
+TWFE, model specification, $\ell_0$ penalty, Dirichlet process, Gibbs sampler,
+treatment effect heterogeneity.
+
+\bigskip
+\noindent\textbf{JEL Codes:} C11, C14, C23, C52.
+
+\newpage
+
+% =============================================================================
+% 1. INTRODUCTION
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Difference-in-differences (DiD) has become one of the workhorses of
+empirical economics. In its canonical form, a treatment group and a control
+group are observed before and after a single policy change, and the
+researcher estimates a single average treatment effect. Modern policy
+evaluations, however, rarely fit this clean template. Minimum wage increases,
+Medicaid expansions, trade liberalizations, and school reforms typically
+roll out across states, cities, or firms in a staggered fashion: different
+units adopt treatment at different calendar times.
+
+The econometrics of staggered DiD has seen remarkable progress in recent years.
+\citet{callaway2021}, \citet{sun2021}, \citet{goodman2021}, and
+\citet{borusyak2024}, among others, have shown that the classical two-way
+fixed effects (TWFE) regression can produce biased estimates of average
+treatment effects when there is heterogeneity in treatment effects across
+cohorts and time. The recommended solution is to estimate
+\emph{cohort-time average treatment effects on the treated} (CATTs) ---
+one coefficient per (cohort, calendar-time) cell --- and then aggregate them
+as desired.
+
+This fully flexible approach resolves the bias problem but introduces a new
+challenge: \emph{model specification}. With $G$ treated cohorts and $T$ time
+periods, there can be $K = \sum_g (T - g + 1)$ distinct CATT cells, easily
+reaching 12, 20, or more in realistic settings. Estimating all $K$ separately
+is unbiased but may be inefficient if some CATTs share the same true effect.
+Conversely, pooling all CATTs into a single parameter (classical TWFE) is
+efficient but biased when effects genuinely differ across cohorts or periods.
+
+The specification question is: \emph{which CATTs can be pooled, and which
+must be kept separate?} This is a model selection problem on the space of
+partitions of the $K$ CATT cells. Getting the partition right matters: under
+the true partition, the estimator is both unbiased and more efficient than the
+fully flexible approach, exploiting the additional identifying restriction that
+some effects are equal without imposing false restrictions on others.
+
+This paper makes two main contributions. First, we formalize the
+specification problem and propose a frequentist solution based on an $\ell_0$
+penalty on pairwise CATT differences. The penalized objective counts the
+number of cross-group CATT pairs, and a greedy merging algorithm minimizes it
+in $O(K^3)$ time. The penalty parameter $L$ controls the strength of
+pooling: small $L$ recovers the fully flexible estimator, large $L$ collapses
+to the fully pooled estimator, and intermediate values recover the true
+partition when the data are informative.
+
+Second, we develop a Bayesian counterpart that places a Dirichlet Process
+(DP) mixture prior over the space of partitions. The DP prior, implemented
+as a Chinese Restaurant Process, assigns positive probability to every
+partition while favouring parsimonious groupings. A collapsed Gibbs sampler
+provides draws from the posterior over partitions and CATT effects. The
+Bayesian approach produces full uncertainty quantification: not just point
+estimates but posterior distributions, credible intervals, and
+co-clustering probabilities for every pair of CATTs.
+
+A key theoretical result connects the two approaches: the $\ell_0$ greedy
+estimator is the MAP estimator of the Bayesian model under an exponential
+prior on cross-group pairs, with the penalty parameter $L$ equal to the
+product of the DP concentration parameter and the noise variance.
+
+A simulation study confirms the properties of both estimators in a
+controlled setting with a known two-group truth. The $\ell_0$ estimator with
+a well-chosen $L$ recovers the true partition in every replication, achieving
+substantial efficiency gains over the flexible estimator and zero bias ---
+in contrast to the biased pooled estimator. The Bayesian DP estimator
+produces co-clustering probabilities above 0.95 within true groups and
+exactly 0 across groups, and its posterior means replicate the efficiency
+gains of the frequentist approach.
+
+The remainder of the paper is organised as follows. Section~\ref{sec:lit}
+reviews the related literature. Section~\ref{sec:problem} formalizes the
+specification problem. Section~\ref{sec:freq} develops the $\ell_0$-penalized
+frequentist estimator. Section~\ref{sec:bayes} develops the Bayesian DP
+estimator and establishes its connection to the frequentist approach.
+Section~\ref{sec:sim} reports the simulation results. Section~\ref{sec:conc}
+concludes.
+
+% =============================================================================
+% 2. LITERATURE REVIEW
+% =============================================================================
+\section{Related Literature}
+\label{sec:lit}
+
+\paragraph{Staggered DiD.}
+The modern staggered DiD literature begins from the observation that TWFE
+with a binary treatment indicator is not generally a weighted average of
+underlying cohort-time effects when treatment effects are heterogeneous
+\citep{goodman2021, dechaisemartin2020, callaway2021, sun2021}.
+\citet{goodman2021} derives a Bacon decomposition showing that the TWFE
+coefficient is a weighted average of all $2\times 2$ DiD comparisons,
+with some weights potentially negative when treatment effects vary over time.
+\citet{dechaisemartin2020} proposes an alternative estimator robust to
+heterogeneous effects. \citet{callaway2021} and \citet{sun2021} advocate for
+first estimating CATTs and then aggregating, a strategy also recommended by
+\citet{borusyak2024} and \citet{roth2023}. \citet{wooldridge2025} shows
+that a TWFE regression with full cohort-time interactions is equivalent to
+the estimators of \citet{callaway2021} and \citet{sun2021} under parallel
+trends.
+
+Our paper takes the fully flexible CATT framework as the starting point
+and asks when and how these granular estimates can be restricted.
+
+\paragraph{Model selection in regression.}
+Classical model selection criteria such as AIC \citep{akaike1974} and BIC
+\citep{schwarz1978} choose among nested models by penalizing the number of
+parameters. The $\ell_0$ penalty, which counts the number of non-zero
+coefficients, is the natural discrete analogue but is NP-hard to optimize
+exactly \citep{fan2001}. The LASSO \citep{tibshirani1996} provides a convex
+relaxation. The fused LASSO \citep{tibshirani2005} penalizes pairwise
+differences between adjacent coefficients, which is closely related to our
+pairwise $\ell_0$ penalty but applies to ordered indices and produces
+continuous shrinkage rather than exact equality constraints.
+
+We focus on the $\ell_0$ formulation because (i) we want exact pooling ---
+two CATTs either share a coefficient or they do not --- and (ii) fixing the
+penalty parameter $L$ and using a greedy algorithm makes the discrete
+optimization tractable at the scales relevant for staggered DiD (typically
+$K \leq 30$).
+
+\paragraph{Bayesian nonparametrics.}
+The Dirichlet Process \citep{ferguson1973, antoniak1974} is the standard
+nonparametric prior for models where the number of components is unknown.
+\citet{escobar1995} show how DP mixture models can be used for density
+estimation and regression with an unknown number of mixture components.
+\citet{neal2000} develops efficient MCMC algorithms for posterior inference,
+including the collapsed Gibbs sampler we employ. \citet{muller2004} provide
+a survey of nonparametric Bayesian methods for applied researchers.
+\citet{miller2018} study the finite mixture model with a prior on the number
+of components, which shares the spirit of our approach.
+
+Our application of DP mixtures to the specification problem in
+staggered DiD is, to our knowledge, novel.
+
+% =============================================================================
+% 3. THE SPECIFICATION PROBLEM
+% =============================================================================
+\section{The Specification Problem}
+\label{sec:problem}
+
+\subsection{Setup}
+
+Consider a balanced panel with $N$ units observed over $T$ time periods.
+Units belong to one of $G$ treated cohorts (indexed by treatment entry date
+$g \in \mathcal{G}$) or a never-treated group. The post-treatment indicator
+for cohort $g$ at time $t$ is $D_{git} = \1\{i \in g,\; t \geq g\}$, and
+the cohort-time treatment dummy is $\mathbf{D}_{git} = \1\{i \in g,\; t = s\}$.
+
+The fully flexible TWFE model is
+\begin{equation}
+  y_{it} = \alpha_i + \lambda_t
+    + \sum_{g \in \mathcal{G}} \sum_{t \geq g} \tau_{gt}\, \mathbf{D}_{git}
+    + \varepsilon_{it},
+  \label{eq:twfe_flex}
+\end{equation}
+where $\alpha_i$ and $\lambda_t$ are unit and time fixed effects,
+$\tau_{gt}$ is the CATT for cohort $g$ at calendar time $t$, and
+$\varepsilon_{it}$ is an idiosyncratic error. Let $K = |\{(g,t): g \in
+\mathcal{G},\; t \geq g\}|$ denote the total number of CATT cells.
+
+\begin{assumption}[Parallel trends]
+  \label{ass:pt}
+  In the absence of treatment, the expected outcome of each cohort $g$ would
+  have followed the same time trend as the never-treated group:
+  $\E[Y_{it}(0) - Y_{it-1}(0) \mid i \in g] = \E[Y_{it}(0) - Y_{it-1}(0)
+  \mid i \in \infty]$ for all $g$ and $t$.
+\end{assumption}
+
+Under Assumption~\ref{ass:pt}, OLS on \eqref{eq:twfe_flex} identifies
+$\tau_{gt}$ for all $(g,t)$ \citep{callaway2021, sun2021, wooldridge2025}.
+We collect these into a vector $\bm{\tau} = (\tau_1, \ldots, \tau_K)'$,
+where we index cells by $k = 1, \ldots, K$ for compactness.
+
+\subsection{The Bias--Variance Trade-off}
+
+The fully flexible estimator $\hat{\bm{\tau}}_{\text{flex}}$ is unbiased
+but has variance
+\begin{equation}
+  \Var(\hat\tau_k) = \sigma^2 \left[(\tilde{D}'\tilde{D})^{-1}\right]_{kk},
+\end{equation}
+where $\tilde{D}$ is the within-transformed dummy matrix. The variance
+increases with $K$ because each parameter is estimated from a smaller share
+of the data.
+
+The fully pooled estimator $\hat\tau_{\text{pool}}$ --- the single-coefficient
+TWFE --- is efficient but satisfies
+\begin{equation}
+  \E[\hat\tau_{\text{pool}}]
+    = \sum_{k=1}^{K} w_k \tau_k,
+    \qquad w_k = \frac{\|\tilde{d}_k\|^2}{\sum_j \|\tilde{d}_j\|^2},
+\end{equation}
+a weighted average of true CATTs. When $\tau_k$ varies across $k$, this
+weighted average does not correspond to any policy-relevant parameter, and
+the estimator is \emph{misspecified}.
+
+\subsection{Partitions and the Specification Problem}
+
+\begin{definition}[Partition]
+  A \emph{partition} $\mathcal{P} = \{C_1, \ldots, C_m\}$ of $\{1, \ldots, K\}$
+  is a collection of $m$ non-empty, mutually exclusive, exhaustive subsets
+  (groups). CATTs in the same group share one common coefficient $\phi_l$.
+\end{definition}
+
+For a given partition $\mathcal{P}$, define the \emph{group regressor}
+$\tilde{X}_l = \sum_{k \in C_l} \tilde{d}_k$ and the matrix
+$\tilde{X} = [\tilde{X}_1, \ldots, \tilde{X}_m]$. The restricted model is
+\begin{equation}
+  \tilde{y} = \tilde{X}\,\bm{\phi} + \tilde\varepsilon,
+  \qquad \tilde\varepsilon \sim \Normal(\mathbf{0},\, \sigma^2 I_{NT}),
+  \label{eq:restricted}
+\end{equation}
+which is estimated by OLS to yield $\hat{\bm{\phi}}(\mathcal{P})$ and
+residual sum of squares $\RSS(\mathcal{P})$.
+
+The specification problem is to select $\mathcal{P}$ from the data.
+There are $B(K)$ possible partitions (the Bell number), which for $K=12$
+is $B(12) = 4{,}213{,}597$. Exhaustive search is infeasible; a data-driven
+criterion with an efficient algorithm is needed.
+
+The bias--variance tradeoff is sharpest when the true parameter vector
+$\bm{\tau}^*$ has only $m^* \ll K$ distinct values. In that case, the oracle
+estimator that knows $\mathcal{P}^*$ is unbiased and has strictly lower
+variance than $\hat{\bm{\tau}}_{\text{flex}}$:
+\begin{equation}
+  \Var(\hat\phi_l(\mathcal{P}^*)) = \sigma^2 \left[(\tilde{X}^{*\prime}\tilde{X}^*)^{-1}\right]_{ll} < \Var(\hat\tau_k)
+  \quad \text{for all } k \in C_l^*.
+\end{equation}
+The efficiency gain grows with the group size $|C_l^*|$, since pooling
+provides more observations per estimated parameter.
+
+% =============================================================================
+% 4. FREQUENTIST APPROACH: L_0 PENALIZED ESTIMATOR
+% =============================================================================
+\section{Frequentist Solution: $\ell_0$-Penalized Greedy Estimator}
+\label{sec:freq}
+
+\subsection{The Penalized Objective}
+
+We propose selecting $\mathcal{P}$ by minimising a penalized residual sum of
+squares. The penalty counts the number of \emph{cross-group CATT pairs} ---
+pairs of CATTs that are in different groups and hence estimated with different
+coefficients:
+\begin{equation}
+  Q(\mathcal{P}) = \RSS(\mathcal{P})
+    + L \cdot \underbrace{\#\{(j,k): j \text{ and } k \text{ in different groups}\}}_{\text{cross-group pairs}},
+  \label{eq:l0obj}
+\end{equation}
+where $L > 0$ is a penalty parameter chosen by the researcher.
+
+The number of cross-group pairs equals
+$\frac{K(K-1)}{2} - \sum_{l=1}^{m}\frac{|C_l|(|C_l|-1)}{2}$, so
+minimising $Q(\mathcal{P})$ in \eqref{eq:l0obj} is equivalent to
+maximising $\sum_{l} |C_l|(|C_l|-1)/2 - \RSS(\mathcal{P})/L$.
+The penalty discourages splitting groups (which increases cross-group pairs)
+unless the resulting reduction in RSS is large enough to compensate.
+
+\begin{remark}
+  When $L=0$, $Q(\mathcal{P}) = \RSS(\mathcal{P})$, which is minimised by
+  the fully flexible partition with $K$ groups.
+  As $L \to \infty$, the penalty dominates and $Q(\mathcal{P})$ is
+  minimised by the fully pooled partition with 1 group.
+  For intermediate $L$, the optimal partition reflects the data's evidence
+  on which CATTs are equal.
+\end{remark}
+
+\subsection{Greedy Merging Algorithm}
+
+Exact minimisation of $Q(\mathcal{P})$ over all $B(K)$ partitions is
+NP-hard. We use a greedy merging heuristic that initialises from the fully
+flexible partition and iteratively merges pairs of groups.
+
+\vspace{4pt}
+\noindent\textbf{Algorithm (Greedy $\ell_0$).}
+\begin{enumerate}[nosep, leftmargin=1.5em]
+  \item Initialise: $\mathcal{P}^{(0)} = \{\{1\},\{2\},\ldots,\{K\}\}$
+    (each CATT is its own group).
+  \item At step $s$, for every pair of current groups $(A, B)$, compute
+    \begin{equation}
+      \Delta\text{Obj}(A,B) = \RSS(\mathcal{P}^{(s)}_{A\cup B})
+        - \RSS(\mathcal{P}^{(s)}) - L\cdot |A|\cdot |B|,
+      \label{eq:merge_criterion}
+    \end{equation}
+    where $\mathcal{P}^{(s)}_{A\cup B}$ is the partition obtained by
+    merging groups $A$ and $B$.
+  \item Accept the merge $(A^*, B^*) = \arg\min_{(A,B)}\Delta\text{Obj}(A,B)$
+    if $\Delta\text{Obj}(A^*, B^*) < 0$.
+  \item Set $\mathcal{P}^{(s+1)}$ to the merged partition and repeat
+    until no beneficial merge exists.
+\end{enumerate}
+
+\textbf{Complexity.} There are $O(K^2)$ candidate pairs per step and at most
+$K-1$ steps, giving $O(K^3)$ OLS evaluations in total. Because we
+pre-compute the within-transformation once via the Frisch--Waugh--Lovell
+theorem \citep{frisch1933}, each evaluation solves a small $m \times m$
+normal-equations system, making the algorithm fast in practice for the
+values of $K$ arising in staggered DiD applications.
+
+\subsection{Interpretation of the Penalty}
+
+The merge criterion \eqref{eq:merge_criterion} has an intuitive
+interpretation: merge groups $A$ and $B$ if and only if the increase in RSS
+from constraining them equal is smaller than $L \cdot |A| \cdot |B|$.
+The factor $|A| \cdot |B|$ arises because merging two groups of sizes
+$|A|$ and $|B|$ eliminates $|A| \cdot |B|$ cross-group pairs.
+
+\begin{proposition}[Threshold interpretation]
+  \label{prop:threshold}
+  For two singleton groups $\{j\}$ and $\{k\}$, the merge criterion
+  $\Delta\emph{Obj}(j,k) < 0$ is equivalent to
+  \begin{equation}
+    (\hat\tau_j - \hat\tau_k)^2 \cdot \frac{n_j n_k}{n_j + n_k} < L,
+  \end{equation}
+  where $n_j = \|\tilde{d}_j\|^2$ is the effective sample size for CATT $j$.
+  Two CATTs are pooled if and only if their squared difference, scaled by
+  their harmonic mean sample size, falls below the threshold $L$.
+\end{proposition}
+
+This result clarifies why there is a wide range of $L$ values that recover
+the true partition $\mathcal{P}^*$: the RSS cost of a \emph{correct} merge
+(two CATTs with the same true effect) is $O(\sigma^2/n)$, while the cost
+of a \emph{wrong} merge (different true effects) is $O(n \cdot \Delta\tau^2)$,
+where $\Delta\tau$ is the effect gap. For large $n$, the signal
+overwhelms the noise and any $L$ in the interval
+$(\sigma^2/n,\; n \cdot \Delta\tau^2)$ recovers $\mathcal{P}^*$.
+
+\subsection{Relationship to Existing Penalized Methods}
+
+The penalty in \eqref{eq:l0obj} counts the number of distinct pairs across
+groups, which is the $\ell_0$ norm applied to the vector of all
+$\binom{K}{2}$ pairwise differences $\{\tau_j - \tau_k\}_{j < k}$. The
+fused LASSO \citep{tibshirani2005} instead uses the $\ell_1$ norm of pairwise
+differences (for ordered indices), producing a convex but inexact version of
+equality. The advantage of the $\ell_0$ formulation is that it produces
+\emph{exact equality} constraints rather than approximate shrinkage.
+
+% =============================================================================
+% 5. BAYESIAN APPROACH: DIRICHLET PROCESS MIXTURE
+% =============================================================================
+\section{Bayesian Solution: Dirichlet Process Mixture}
+\label{sec:bayes}
+
+\subsection{Model Specification}
+
+We place a Dirichlet Process mixture prior on the CATT effects, treating the
+$K$ CATTs as exchangeable draws from an unknown mixing distribution $G$:
+\begin{align}
+  G &\sim \DP(\alpha,\, G_0), \label{eq:dp_prior}\\
+  \tau_k \mid G &\overset{iid}{\sim} G, \quad k = 1,\ldots,K,
+  \label{eq:dp_draw}\\
+  G_0 &= \Normal(\mu_0,\, \sigma_0^2).
+  \label{eq:base}
+\end{align}
+Because the DP is almost surely discrete \citep{ferguson1973}, draws
+from $G$ repeat with positive probability, inducing a random
+\emph{clustering} of the CATTs. The concentration parameter $\alpha > 0$
+controls the expected number of clusters: $\E[m] \approx \alpha\log(1+K/\alpha)$.
+Small $\alpha$ favours few groups; large $\alpha$ favours many.
+
+\subsection{Chinese Restaurant Process Representation}
+
+Marginalising over $G$ in \eqref{eq:dp_prior}--\eqref{eq:dp_draw} yields
+the Chinese Restaurant Process (CRP) distribution over partitions. Under
+the CRP with concentration $\alpha$, the cluster label $z_k$ of CATT $k$,
+given previous assignments $z_1,\ldots,z_{k-1}$, satisfies
+\begin{equation}
+  \Pr(z_k = c \mid z_1,\ldots,z_{k-1}) =
+  \begin{cases}
+    \dfrac{n_c}{k-1+\alpha} & \text{cluster } c \text{ has } n_c \text{ members},\\[6pt]
+    \dfrac{\alpha}{k-1+\alpha} & c \text{ is a new cluster.}
+  \end{cases}
+  \label{eq:crp}
+\end{equation}
+Popular clusters attract more members (``rich get richer''), but new clusters
+can always be opened. The marginal probability of a partition
+$\mathcal{P} = \{C_1,\ldots,C_m\}$ is
+\begin{equation}
+  \Pr(\mathcal{P}) = \frac{\alpha^m \prod_{l=1}^{m}(|C_l|-1)!}{\alpha^{(K)}},
+  \label{eq:crp_partition}
+\end{equation}
+where $\alpha^{(K)} = \alpha(\alpha+1)\cdots(\alpha+K-1)$ is the rising
+factorial.
+
+\subsection{Marginal Likelihood}
+
+Given a partition $\mathcal{P}$ and the group effects
+$\bm{\phi} \sim \Normal(\mu_0\mathbf{1}_m,\, \sigma_0^2 I_m)$, the
+within-transformed likelihood \eqref{eq:restricted} gives a normal-normal
+conjugate model. Integrating out $\bm{\phi}$ yields the marginal likelihood
+\begin{equation}
+  \tilde{y} \mid \mathcal{P}
+  \;\sim\; \Normal\!\left(\mu_0 \tilde{X}\mathbf{1}_m,\;
+    \sigma^2 I_{NT} + \sigma_0^2 \tilde{X}\tilde{X}'\right).
+  \label{eq:marglik}
+\end{equation}
+By the matrix determinant lemma and the Woodbury identity, the log
+marginal likelihood (dropping terms constant in $\mathcal{P}$) is
+\begin{equation}
+  \log p(\tilde{y}\mid\mathcal{P})
+  \propto
+  -\tfrac{1}{2}\log|I_m + \kappa\,\tilde{X}'\tilde{X}|
+  + \frac{\kappa}{2\sigma^2}(\tilde{X}'\tilde{y})'
+    (I_m + \kappa\,\tilde{X}'\tilde{X})^{-1}(\tilde{X}'\tilde{y}),
+  \label{eq:logml}
+\end{equation}
+where $\kappa = \sigma_0^2/\sigma^2$. The posterior covariance of
+$\bm{\phi}$ is $\bm{\Sigma}^* = (\tilde{X}'\tilde{X}/\sigma^2 +
+I_m/\sigma_0^2)^{-1}$ and the posterior mean is
+$\bm{\mu}^* = \bm{\Sigma}^*(\tilde{X}'\tilde{y}/\sigma^2 +
+\mu_0\mathbf{1}_m/\sigma_0^2)$.
+
+\subsection{Collapsed Gibbs Sampler}
+
+We sample from the posterior $\Pr(\mathcal{P}\mid\tilde{y}) \propto
+p(\tilde{y}\mid\mathcal{P})\,\Pr(\mathcal{P})$ using the collapsed Gibbs
+sampler of \citet{neal2000} (Algorithm~3), which integrates out $\bm{\phi}$
+analytically. At each iteration, we cycle over all $K$ CATTs. For CATT $k$:
+\begin{enumerate}[nosep]
+  \item Remove $k$ from its current cluster; delete the cluster if empty.
+  \item For each existing cluster $c$ and for a new cluster, compute the
+    conditional probability
+    \begin{equation}
+      \Pr(z_k = c \mid z_{-k},\,\tilde{y})
+      \;\propto\;
+      \begin{cases}
+        n_{-k,c}\;\times\; p(\tilde{y}\mid z_k = c,\, z_{-k}) & \text{existing},\\[4pt]
+        \alpha \;\times\; p(\tilde{y}\mid z_k = c_{\text{new}},\, z_{-k}) & \text{new},
+      \end{cases}
+      \label{eq:gibbs}
+    \end{equation}
+    where the marginal likelihoods are computed via \eqref{eq:logml}.
+  \item Draw $z_k$ from the normalised probabilities \eqref{eq:gibbs}.
+\end{enumerate}
+After updating all cluster assignments, draw $\bm{\phi}$ from the
+conjugate posterior $\Normal(\bm{\mu}^*, \bm{\Sigma}^*)$. The sequence of
+draws $\{z^{(s)}, \bm{\phi}^{(s)}\}_{s=1}^S$ approximates the posterior.
+
+\subsection{Posterior Quantities}
+
+The posterior mean of $\tau_k$ is
+$\hat\tau_k^{\text{Bayes}} = S^{-1}\sum_s \phi_{z_k^{(s)}}^{(s)}$,
+and a 95\% credible interval is obtained from the empirical quantiles.
+The \emph{co-clustering probability}
+\begin{equation}
+  \hat\pi_{jk} = S^{-1}\sum_{s=1}^{S} \1\{z_j^{(s)} = z_k^{(s)}\}
+\end{equation}
+gives the posterior probability that CATTs $j$ and $k$ belong to the same
+group. The $K \times K$ matrix $\hat\Pi = [\hat\pi_{jk}]$ is the
+\emph{posterior similarity matrix}.
+
+\subsection{Connection to the $\ell_0$ Estimator}
+
+\begin{proposition}[MAP equivalence]
+  \label{prop:map}
+  Fix $\bm{\phi}$ at its OLS value for each partition. Then the MAP
+  estimator under the Bayesian model with prior
+  $\Pr(\mathcal{P}) \propto \exp(-\lambda \cdot \#\{\emph{cross-group pairs}\})$
+  coincides with the minimiser of $Q(\mathcal{P})$ in \eqref{eq:l0obj}
+  with $L = \lambda\sigma^2$.
+\end{proposition}
+
+\begin{proof}
+  The negative log-posterior (up to a constant) is
+  $\RSS(\mathcal{P})/\sigma^2 + 2\lambda \cdot \#\{\text{cross-group pairs}\}$.
+  Multiplying through by $\sigma^2/2$ and identifying $L = \lambda\sigma^2$
+  recovers \eqref{eq:l0obj}.
+\end{proof}
+
+Proposition~\ref{prop:map} implies that the $\ell_0$ greedy estimator is the
+point-estimate analogue of the Bayesian approach: it produces the most
+probable partition under the DP prior (for a given $L$), while the Bayesian
+estimator adds full uncertainty quantification around that point.
+
+% =============================================================================
+% 6. SIMULATION STUDY
+% =============================================================================
+\section{Simulation Study}
+\label{sec:sim}
+
+\subsection{Data-Generating Process}
+
+We simulate a balanced panel with $N = 400$ units ($100$ per cohort) and
+$T = 8$ time periods. Three treated cohorts enter treatment at $t = 3$, $t = 5$,
+and $t = 7$, and one never-treated cohort serves as the control group.
+The outcome is generated as
+\begin{equation}
+  y_{it} = \alpha_i + \lambda_t + \tau^*_{gt}\cdot\1\{i\in g,\;t\geq g\} + \varepsilon_{it},
+\end{equation}
+where $\alpha_i \sim \Normal(0,1)$, $\lambda_t = 0.1(t-1)$, and
+$\varepsilon_{it} \overset{iid}{\sim} \Normal(0, 0.25)$.
+The true CATT structure has \textbf{two groups}:
+\begin{itemize}[nosep]
+  \item \textbf{Group A} ($\tau^* = 2$): cohort 3 at $t=3,\ldots,8$ and
+    cohort 5 at $t=5,\ldots,8$ (10 CATTs total).
+  \item \textbf{Group B} ($\tau^* = 4$): cohort 7 at $t=7,8$ (2 CATTs).
+\end{itemize}
+The true partition has $m^* = 2$ groups out of $K = 12$ CATT cells.
+
+\subsection{Estimators}
+
+We compare six estimators:
+\begin{enumerate}[nosep]
+  \item \textbf{Flexible}: all 12 CATTs estimated separately.
+  \item \textbf{L0 ($L=0.5$)}: greedy $\ell_0$ with small penalty.
+  \item \textbf{L0 ($L=2$)}: greedy $\ell_0$ with moderate penalty.
+  \item \textbf{L0 ($L=10$)}: greedy $\ell_0$ with large penalty.
+  \item \textbf{Pooled}: single coefficient for all CATTs (naive TWFE).
+  \item \textbf{DP Bayes}: Dirichlet Process Gibbs sampler, 100 iterations,
+    $\alpha = 1$, $\sigma_0^2 = 9$.
+\end{enumerate}
+
+\subsection{Single-Sample Results}
+
+Table~\ref{tab:single} reports the number of estimated groups, RSS, and RMSE
+(relative to the true CATTs) for a single dataset with $\texttt{seed}=42$.
+
+\begin{table}[ht]
+  \centering
+  \caption{Single-sample results ($N=400$, $T=8$, $K=12$, seed = 42)}
+  \label{tab:single}
+  \begin{tabular}{lccc}
+    \toprule
+    Method & \# Groups & RSS & RMSE \\
+    \midrule
+    Flexible     & 12 & 709.62 & 0.0584 \\
+    L0 ($L=0.5$) &  2 & 711.23 & 0.0153 \\
+    L0 ($L=2$)   &  2 & 711.23 & 0.0153 \\
+    L0 ($L=10$)  &  2 & 711.23 & 0.0153 \\
+    L0 ($L=50$)  &  1 & 1083.01 & 0.7963 \\
+    Pooled       &  1 & 1083.01 & 0.7963 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+For $L \in \{0.5, 2, 10\}$, the greedy algorithm recovers exactly 2 groups,
+matching the true partition. The RMSE falls from 0.058 (Flexible) to 0.015
+(L0), a fourfold efficiency gain. The pooled estimator's RMSE is 0.796,
+reflecting the large bias from forcing together CATTs with effects of 2 and 4.
+
+Figure~\ref{fig:catts} shows the CATT estimates for the Flexible, L0 ($L=2$),
+and Pooled estimators. The L0 estimates are nearly flat within each true group
+and close to the truth, while the Flexible estimates show sampling variation
+around the same values and the Pooled estimates are biased for both groups.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{../simulations/catt_estimates.png}
+  \caption{CATT estimates by cohort. Black dashed line = true effect.
+    The L0 ($L=2$) estimator correctly pools cohorts 3 and 5 into Group A
+    ($\hat\tau=2$) and keeps cohort 7 as Group B ($\hat\tau=4$).}
+  \label{fig:catts}
+\end{figure}
+
+\subsection{Monte Carlo Results}
+
+We run $S = 1{,}000$ independent replications of the DGP and compute the
+mean, variance, and bias of estimated ATTs for each method and each true
+treatment group. Table~\ref{tab:mc} reports the results.
+
+\begin{table}[ht]
+  \centering
+  \caption{Monte Carlo results ($S=1{,}000$ replications). Mean, variance,
+    and bias of estimated ATT, averaged within each true treatment group.}
+  \label{tab:mc}
+  \begin{tabular}{lcccccc}
+    \toprule
+    & \multicolumn{3}{c}{Group A ($\tau^*=2$)}
+    & \multicolumn{3}{c}{Group B ($\tau^*=4$)} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}
+    Method & Mean & Variance & Bias & Mean & Variance & Bias \\
+    \midrule
+    Flexible     & 1.999 & 0.00161 & $-$0.001 & 3.999 & 0.00320 & $-$0.001 \\
+    L0 ($L=0.5$) & 1.999 & 0.00139 & $-$0.001 & 4.000 & 0.00232 & $-$0.000 \\
+    L0 ($L=2$)   & 1.999 & 0.00139 & $-$0.001 & 4.000 & 0.00232 & $-$0.000 \\
+    L0 ($L=10$)  & 2.246 & 0.06041 & $+$0.246 & 3.371 & 0.34536 & $-$0.629 \\
+    L0 ($L=50$)  & 2.599 & 0.00112 &$+$0.599  & 2.599 & 0.00112 & $-$1.401 \\
+    Pooled       & 2.599 & 0.00112 & $+$0.599 & 2.599 & 0.00112 & $-$1.401 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Several findings stand out. First, the Flexible estimator is unbiased
+but has the highest variance among unbiased estimators.
+Second, L0 with $L \in \{0.5, 2\}$ is also unbiased (bias $< 0.002$)
+but achieves strictly lower variance than Flexible in both groups,
+confirming the efficiency gain from correct pooling.
+Third, L0 with $L=10$ exhibits large bias and the highest variance of
+all methods: at this penalty, the algorithm inconsistently merges the
+two true groups across replications, producing an erratic estimator.
+Fourth, L0 with $L=50$ and the Pooled estimator are identical ---
+the penalty always forces full pooling --- with modest variance but
+substantial bias (0.60 for Group A, $-$1.40 for Group B).
+
+Figure~\ref{fig:variances} shows the variance of each CATT estimate across
+replications for the four main estimators. The efficiency advantage of L0
+($L=2$) over Flexible is consistent across all 12 CATTs, and there is a
+notable spike in variance for L0 ($L=10$) at the cohort 7 CATTs (Group B),
+reflecting the algorithm's instability at that penalty level.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{../simulations/mc_catt_variance.png}
+  \caption{Variance of CATT estimates across $S=1{,}000$ replications.
+    Shaded bands indicate cohort membership. L0 ($L=0.5$) and L0 ($L=2$)
+    lie substantially below Flexible at all CATTs. L0 ($L=10$) spikes for
+    Group B (cohort 7) due to inconsistent partition selection.}
+  \label{fig:variances}
+\end{figure}
+
+Figure~\ref{fig:sampling} plots the sampling distributions of the ATT
+estimates for the four retained methods. The Flexible and L0 ($L \in\{0.5,2\}$)
+distributions are centred on the true effects; Pooled is clearly biased.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{../simulations/mc_sampling_dist.png}
+  \caption{Sampling distributions of ATT estimates across $S=1{,}000$
+    replications, by true treatment group. Black dashed line = true effect.
+    L0 ($L=0.5$) and L0 ($L=2$) closely track Flexible but with
+    narrower distributions; Pooled is substantially shifted.}
+  \label{fig:sampling}
+\end{figure}
+
+\subsection{Bayesian DP Results}
+
+We run 100 Gibbs iterations on the original dataset ($\texttt{seed}=42$)
+with $\alpha=1$ and $\sigma_0^2=9$. Figure~\ref{fig:dp} shows the posterior
+distributions of all 12 CATT effects, faceted by cohort.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{../simulations/dp_posterior.png}
+  \caption{Posterior distributions of CATT effects from the DP Gibbs sampler
+    (100 iterations, $\alpha=1$). Each curve is the posterior density of one
+    CATT. Black dashed line = true effect. All posteriors concentrate tightly
+    around the true values.}
+  \label{fig:dp}
+\end{figure}
+
+The posterior concentrates tightly around the true effects in all cohorts.
+The key co-clustering statistics are:
+\begin{itemize}[nosep]
+  \item $\hat\pi_{jk} = 0.954$ for any two CATTs both in Group A ($\tau^*=2$).
+  \item $\hat\pi_{jk} = 0.990$ for the two Group B CATTs ($\tau^*=4$).
+  \item $\hat\pi_{jk} = 0.000$ for any cross-group pair.
+\end{itemize}
+The posterior mean number of groups is 2.1 (mode = 2), converging to the
+true partition by iteration 20.
+
+\subsection{Discussion}
+
+The simulation results confirm three main takeaways. \textit{First},
+the $\ell_0$ greedy estimator recovers the true partition reliably for a
+wide range of $L$ values (here, $L \in \{0.5, 2, 10\}$ in the single-sample
+exercise). The efficiency gain over the fully flexible estimator is
+substantial and consistent. \textit{Second}, the penalty parameter $L$
+matters: $L=10$ in the Monte Carlo leads to erratic behaviour because it
+is close to the boundary of the identified interval
+$(\sigma^2/n,\; n\Delta\tau^2) \approx (0.0025, 400)$ only for certain
+noise realisations. In practice, researchers should examine the solution
+path (number of groups vs.\ $L$) to identify a stable plateau. \textit{Third},
+the DP Bayesian estimator delivers essentially the same point estimates as the
+frequentist $\ell_0$ approach, but adds posterior uncertainty over the
+grouping, without requiring the researcher to choose $L$ explicitly.
+
+% =============================================================================
+% 7. CONCLUSION
+% =============================================================================
+\section{Conclusion}
+\label{sec:conc}
+
+This paper addresses a largely overlooked step in the staggered DiD workflow:
+model specification. Once cohort-time treatment effects are identified as the
+estimands of interest, the researcher must decide how many distinct parameters
+to estimate. We propose two data-driven procedures that answer this question.
+
+The $\ell_0$-penalized greedy estimator provides a fast, transparent, and
+interpretable answer: pool CATTs if and only if the cost in fit is smaller
+than the penalty per cross-group pair. The Bayesian DP estimator provides
+a principled probabilistic answer: assign a posterior probability to every
+possible grouping and report the full posterior uncertainty. The two approaches
+are formally equivalent in the MAP sense and deliver nearly identical point
+estimates in our simulation.
+
+Both approaches achieve efficiency gains over the fully flexible estimator
+without the bias of naive pooling, provided the penalty or concentration
+parameter is chosen sensibly. The solution path --- the plot of estimated
+group count against $L$ --- is a useful diagnostic: a stable plateau
+at $m^*$ groups over a wide range of $L$ signals that the partition is
+well-identified.
+
+Several directions merit future work. First, the greedy algorithm is a
+heuristic; developing exact or near-exact algorithms for small $K$, or
+theoretical guarantees on the approximation quality, would be valuable.
+Second, the current framework assumes homoskedastic errors; extending
+the Bayesian model to allow for group-specific variances or cluster-robust
+inference is straightforward but may matter in practice. Third, formal
+asymptotic theory establishing consistency of the partition estimator ---
+as both $N$ and the effective sample size per CATT grow --- would solidify
+the method's theoretical foundations. Fourth, an extension to covariate-assisted
+specification (where observable unit characteristics predict group membership)
+could improve performance in settings with richer data.
+
+Finally, while the simulation here uses a clean two-group truth for
+transparency, the methods are designed for settings where the true partition
+is unknown and potentially complex. The DP prior's flexibility to accommodate
+any number of groups makes it particularly suited to applied settings where
+researchers have little prior knowledge about treatment effect heterogeneity.
+
+% =============================================================================
+% REFERENCES
+% =============================================================================
+\newpage
+\bibliographystyle{aer}
+\bibliography{references}
+
+\end{document}
