@@ -1,0 +1,416 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{bm}
+\usepackage{bbm}
+\usepackage{enumitem}
+
+\geometry{margin=1.2in}
+\doublespacing
+
+\newtheorem{assumption}{Assumption}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{remark}{Remark}
+\newtheorem{lemma}{Lemma}
+\newtheorem{definition}{Definition}
+
+\DeclareMathOperator{\RSS}{RSS}
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\tr}{tr}
+\newcommand{\Normal}{\mathcal{N}}
+\newcommand{\1}{\mathbbm{1}}
+\newcommand{\ytd}{\tilde{y}}
+\newcommand{\Dtd}{\tilde{D}}
+\newcommand{\Xtd}{\tilde{X}}
+
+\title{Section: The Specification Issue (standalone draft)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+% =============================================================================
+%  SECTION: THE SPECIFICATION ISSUE
+% =============================================================================
+\section{The Specification Issue}
+\label{sec:spec_issue}
+
+A fundamental but underappreciated tension runs through the staggered
+difference-in-differences literature.
+On one side stands the fully flexible TWFE estimator, which treats
+every cohort-time cell as a distinct parameter.
+On the other side stands the fully pooled TWFE estimator, which collapses
+all cells into a single coefficient.
+Both approaches are suboptimal in general.
+The fully flexible estimator is guaranteed to be unbiased but wastes
+statistical precision whenever some cohort-time effects happen to be
+equal in the population.
+The fully pooled estimator is efficient but produces biased estimates of
+every cohort-time effect the moment any two of those effects genuinely
+differ.
+The truth, in most empirical settings, lies somewhere between these two
+extremes: a subset of cohort-time cells share a common treatment effect
+and can be jointly estimated, while the remainder are heterogeneous and
+must be kept separate.
+This section makes that intuition precise, derives the efficiency cost
+of the two extremes in closed form, and shows that any correctly specified
+intermediate model strictly dominates the fully flexible estimator in terms
+of estimator variance without sacrificing unbiasedness.
+
+\bigskip
+
+\noindent\textbf{The two extremes.}
+Recall the within-transformed model obtained after double-demeaning to
+partial out unit and time fixed effects:
+\begin{equation}
+  \ytd = \Dtd\,\bm{\tau} + \tilde{\varepsilon},
+  \qquad
+  \tilde{\varepsilon} \sim \bigl(\mathbf{0},\,\sigma^2 I_{NT}\bigr),
+  \label{eq:flex_dm}
+\end{equation}
+where $\ytd$ is the $NT \times 1$ vector of within-transformed outcomes,
+$\Dtd = [\tilde{d}_1, \ldots, \tilde{d}_K]$ is the $NT\times K$ matrix of
+within-transformed cohort-time dummies, and $\bm{\tau} =
+(\tau_1,\ldots,\tau_K)'$ collects all $K$ CATTs.
+Ordinary least squares on \eqref{eq:flex_dm} yields the \emph{fully
+flexible} estimator
+\begin{equation}
+  \hat{\bm{\tau}}_{\text{flex}}
+  = \bigl(\Dtd'\Dtd\bigr)^{-1}\Dtd'\ytd,
+  \qquad
+  \Var\!\bigl(\hat{\bm{\tau}}_{\text{flex}}\bigr)
+  = \sigma^2\bigl(\Dtd'\Dtd\bigr)^{-1}.
+  \label{eq:flex_var}
+\end{equation}
+The diagonal element $\sigma^2[(\Dtd'\Dtd)^{-1}]_{kk}$ is the sampling
+variance of the $k$-th CATT estimate.
+Because each CATT is estimated from the variation in its own
+within-transformed indicator $\tilde{d}_k$, this variance is governed
+by how much identifying variation CATT $k$ possesses individually.
+In large panels with many cohorts and long post-treatment windows, $K$
+is large and the variation attributable to any single CATT cell is
+correspondingly modest, leading to imprecise estimates even when the
+overall sample size $NT$ is large.
+
+The opposite extreme imposes a single common coefficient $\tau$ for every
+cohort-time cell.
+Writing $\tilde{X}_{\text{pool}} = \sum_{k=1}^K \tilde{d}_k$ for the
+aggregate within-transformed treatment indicator, the \emph{fully pooled}
+estimator is
+\begin{equation}
+  \hat\tau_{\text{pool}}
+  = \bigl(\tilde{X}_{\text{pool}}'\tilde{X}_{\text{pool}}\bigr)^{-1}
+    \tilde{X}_{\text{pool}}'\ytd,
+  \qquad
+  \Var\!\bigl(\hat\tau_{\text{pool}}\bigr)
+  = \frac{\sigma^2}{\bigl\|\tilde{X}_{\text{pool}}\bigr\|^2}.
+  \label{eq:pool_var}
+\end{equation}
+Since $\tilde{X}_{\text{pool}}$ aggregates the variation of all $K$ cells,
+$\|\tilde{X}_{\text{pool}}\|^2 \gg \|\tilde{d}_k\|^2$ for any individual
+$k$, and the pooled estimator is correspondingly precise.
+The cost is bias: the pooled estimator is consistent for
+$\sum_{k=1}^K w_k \tau_k^*$, the variation-weighted average of true CATTs,
+not for any individual $\tau_k^*$.
+Formally, the bias of $\hat\tau_{\text{pool}}$ as an estimator of $\tau_k^*$ is
+\begin{equation}
+  \E\bigl[\hat\tau_{\text{pool}}\bigr] - \tau_k^*
+  = \sum_{j=1}^K w_j\bigl(\tau_j^* - \tau_k^*\bigr),
+  \qquad
+  w_j = \frac{\|\tilde{d}_j\|^2}{\sum_{\ell=1}^K \|\tilde{d}_\ell\|^2},
+  \label{eq:pool_bias}
+\end{equation}
+where we use the approximation that the within-transformed dummies are
+nearly orthogonal across distinct cohort-time cells (which holds exactly in
+balanced panels).
+The bias in \eqref{eq:pool_bias} is zero only when all true CATTs are equal
+--- precisely the case in which the pooled model is correctly specified.
+In any other case the pooled estimator distorts every cohort-specific
+treatment effect toward a global average, rendering it useless for
+heterogeneity-aware policy analysis.
+
+\bigskip
+
+\noindent\textbf{The general intermediate case.}
+Let the true parameter vector $\bm{\tau}^* = (\tau_1^*,\ldots,\tau_K^*)'$
+exhibit \emph{partial homogeneity}: exactly $K-p$ cells share a common
+treatment effect and the remaining $p$ cells are heterogeneous, with
+$0 < p < K$.
+More precisely, there exists a partition $\mathcal{P}^* =
+\{C_1^*,\ldots,C_p^*,\, C_{p+1}^*\}$ of $\{1,\ldots,K\}$ such that
+\begin{align}
+  \bigl|C_l^*\bigr| &= 1 \quad \text{for } l = 1,\ldots,p
+    && \text{($p$ heterogeneous singletons)},
+  \label{eq:singletons}\\
+  \bigl|C_{p+1}^*\bigr| &= K - p
+    && \text{($K-p$ homogeneous cells)},
+  \label{eq:homo_group}\\
+  \tau_k^* &= \phi_l^* \quad \text{for all } k \in C_l^*,
+  \label{eq:true_effects}
+\end{align}
+where $\phi_1^*, \ldots, \phi_p^*$ are all distinct, $\phi_{p+1}^*$ is the
+common effect shared by the homogeneous group, and all $p+1$ values are
+distinct from one another.
+We call $\mathcal{P}^*$ the \emph{true partition} and $K - p \geq 2$
+(otherwise there is no pooling gain).
+The true model has $m^* = p + 1$ distinct parameters rather than $K$,
+so the fully flexible model is over-parameterised by $K - p - 1$ parameters.
+
+To estimate the correctly specified model under $\mathcal{P}^*$, define the
+group regressors $\Xtd_l = \sum_{k \in C_l^*} \tilde{d}_k$ and collect them
+into the $NT \times (p+1)$ matrix
+$\Xtd^* = [\tilde{X}_1^*, \ldots, \tilde{X}_p^*, \tilde{X}_{p+1}^*]$.
+For the $p$ singletons, $\Xtd_l = \tilde{d}_{k_l}$.
+For the homogeneous group, $\Xtd_{p+1} = \sum_{k \in C_{p+1}^*} \tilde{d}_k$.
+The restricted model is
+\begin{equation}
+  \ytd = \Xtd^*\bm{\phi}^* + \tilde{\varepsilon},
+  \qquad
+  \tilde{\varepsilon} \sim \bigl(\mathbf{0},\,\sigma^2 I_{NT}\bigr),
+  \label{eq:oracle_model}
+\end{equation}
+and its OLS estimator is
+\begin{equation}
+  \hat{\bm{\phi}}^* = \bigl(\Xtd^{*\prime}\Xtd^*\bigr)^{-1}\Xtd^{*\prime}\ytd,
+  \qquad
+  \Var\!\bigl(\hat{\bm{\phi}}^*\bigr)
+  = \sigma^2\bigl(\Xtd^{*\prime}\Xtd^*\bigr)^{-1}.
+  \label{eq:oracle_var}
+\end{equation}
+The $(p+1)$-th diagonal element of $\sigma^2(\Xtd^{*\prime}\Xtd^*)^{-1}$
+governs the precision of $\hat\phi_{p+1}^*$, the estimate of the common
+homogeneous effect.
+For any $k \in C_{p+1}^*$, the oracle's estimate of $\tau_k^* =
+\phi_{p+1}^*$ is $\hat\phi_{p+1}^*$, which pools the identifying variation
+of all $K-p$ cells in the homogeneous group.
+The flexible estimator, in contrast, estimates $\tau_k^*$ using only
+the variation in $\tilde{d}_k$.
+This difference in the effective information set is the source of the
+variance gap.
+
+\bigskip
+
+\noindent\textbf{Variance comparison: oracle versus fully flexible.}
+We now establish that the oracle estimator $\hat{\bm{\phi}}^*$ strictly
+dominates the fully flexible estimator $\hat{\bm{\tau}}_{\text{flex}}$
+in terms of estimator variance for every CATT in the homogeneous group.
+The key insight is that both estimators are unbiased for $\phi_{p+1}^*$
+under the true model, so the Gauss--Markov theorem immediately determines
+which is more efficient.
+
+\begin{lemma}[Unbiasedness of the flexible estimator under the oracle model]
+  \label{lem:unbiased}
+  Fix any $k \in C_{p+1}^*$.  Under the oracle DGP
+  \eqref{eq:oracle_model}, the flexible OLS estimator $\hat\tau_k^{\emph{flex}}$
+  is an unbiased estimator of $\phi_{p+1}^*$.
+\end{lemma}
+
+\begin{proof}
+Let $e_k$ denote the $k$-th standard basis vector in $\mathbb{R}^K$, so
+that $\hat\tau_k^{\text{flex}} = e_k'\hat{\bm{\tau}}_{\text{flex}} =
+e_k'(\Dtd'\Dtd)^{-1}\Dtd'\ytd$.
+This is a linear function of $\ytd$, so its expectation under the oracle
+model equals $e_k'(\Dtd'\Dtd)^{-1}\Dtd'\,\E[\ytd]$.
+Under \eqref{eq:oracle_model}, $\E[\ytd] = \Xtd^*\bm{\phi}^*$.
+Observe that $\Xtd^*\bm{\phi}^*$ can be written as
+$\sum_{l=1}^{p+1}\phi_l^* \Xtd_l^* = \sum_{k=1}^K \tau_k^* \tilde{d}_k =
+\Dtd\bm{\tau}^*$, since every column of $\Dtd$ appears in exactly one
+group of $\mathcal{P}^*$ and the corresponding group effect is precisely
+$\tau_k^*$.  Therefore
+\[
+  \E\bigl[\hat\tau_k^{\text{flex}}\bigr]
+  = e_k'\bigl(\Dtd'\Dtd\bigr)^{-1}\Dtd'\Dtd\,\bm{\tau}^*
+  = e_k'\bm{\tau}^* = \tau_k^* = \phi_{p+1}^*. \qedhere
+\]
+\end{proof}
+
+\noindent Armed with Lemma~\ref{lem:unbiased}, the variance ordering follows
+directly from the Gauss--Markov theorem.
+
+\begin{proposition}[Oracle efficiency dominance]
+  \label{prop:oracle_dom}
+  Under the true partition $\mathcal{P}^*$ and for any $k \in C_{p+1}^*$,
+  \begin{equation}
+    \Var\!\bigl(\hat\phi_{p+1}^*\bigr)
+    \;\leq\;
+    \Var\!\bigl(\hat\tau_k^{\emph{flex}}\bigr),
+    \label{eq:var_ineq}
+  \end{equation}
+  with strict inequality whenever $|C_{p+1}^*| = K - p \geq 2$.
+\end{proposition}
+
+\begin{proof}
+The oracle model \eqref{eq:oracle_model} is correctly specified.
+By the Gauss--Markov theorem, $\hat\phi_{p+1}^*$ is the Best Linear
+Unbiased Estimator (BLUE) of $\phi_{p+1}^*$ within the class of all
+linear functions of $\ytd$.
+By Lemma~\ref{lem:unbiased}, $\hat\tau_k^{\text{flex}}$ is also a linear
+unbiased estimator of $\phi_{p+1}^*$.
+It therefore satisfies $\Var(\hat\tau_k^{\text{flex}}) \geq
+\Var(\hat\phi_{p+1}^*)$.
+Strict inequality holds whenever $\hat\tau_k^{\text{flex}} \neq
+\hat\phi_{p+1}^*$ with positive probability, which is the case as long as
+$|C_{p+1}^*| \geq 2$, since $\hat\phi_{p+1}^*$ pools information from all
+$K-p$ cells in the homogeneous group while $\hat\tau_k^{\text{flex}}$
+uses only the variation in $\tilde{d}_k$.
+\end{proof}
+
+\noindent Proposition~\ref{prop:oracle_dom} applies identically to each of
+the $p$ heterogeneous singleton groups: for $k \in C_l^*$ with
+$l \leq p$, the oracle and flexible estimators coincide ($\hat\phi_l^* =
+\hat\tau_k^{\text{flex}}$), so there is no variance gap.
+The entire efficiency gain comes from pooling the $K-p$ cells in the
+homogeneous group.
+
+\bigskip
+
+\noindent\textbf{Quantifying the efficiency gain.}
+To obtain an explicit expression for the variance reduction in
+\eqref{eq:var_ineq}, it is instructive to work under the additional
+assumption that the within-transformed cohort-time dummies are mutually
+orthogonal, $\tilde{d}_j'\tilde{d}_k = 0$ for $j \neq k$, which holds
+exactly for balanced panels in which each unit belongs to exactly one
+cohort.
+Under orthogonality, $\Dtd'\Dtd = \mathrm{diag}(n_1,\ldots,n_K)$ where
+$n_k = \|\tilde{d}_k\|^2$ denotes the effective sample size for CATT $k$.
+
+For the flexible estimator, the variance of $\hat\tau_k^{\text{flex}}$ simplifies to
+\begin{equation}
+  \Var\!\bigl(\hat\tau_k^{\text{flex}}\bigr)
+  = \frac{\sigma^2}{n_k},
+  \qquad k = 1,\ldots,K.
+  \label{eq:flex_var_orth}
+\end{equation}
+For the oracle estimator of the homogeneous group, orthogonality of the
+individual dummies implies
+\begin{equation}
+  \bigl\|\tilde{X}_{p+1}^*\bigr\|^2
+  = \Bigl\|\sum_{k\in C_{p+1}^*}\tilde{d}_k\Bigr\|^2
+  = \sum_{k\in C_{p+1}^*} n_k,
+  \label{eq:oracle_norm}
+\end{equation}
+so the oracle variance is
+\begin{equation}
+  \Var\!\bigl(\hat\phi_{p+1}^*\bigr)
+  = \frac{\sigma^2}{\displaystyle\sum_{k\in C_{p+1}^*} n_k}.
+  \label{eq:oracle_var_orth}
+\end{equation}
+Taking the ratio of \eqref{eq:oracle_var_orth} to \eqref{eq:flex_var_orth}
+for any $k \in C_{p+1}^*$,
+\begin{equation}
+  \frac{\Var(\hat\phi_{p+1}^*)}{\Var(\hat\tau_k^{\text{flex}})}
+  = \frac{n_k}{\displaystyle\sum_{j\in C_{p+1}^*} n_j}
+  < 1.
+  \label{eq:var_ratio}
+\end{equation}
+The ratio equals $n_k / (n_k + \sum_{j \neq k, j \in C_{p+1}^*} n_j)$,
+which is strictly less than one and decreasing in the effective sample sizes
+of the other cells in the homogeneous group.
+In the balanced case, where $n_k = n$ for all $k$, the ratio collapses to
+\begin{equation}
+  \frac{\Var(\hat\phi_{p+1}^*)}{\Var(\hat\tau_k^{\text{flex}})}
+  = \frac{1}{K - p},
+  \label{eq:var_ratio_balanced}
+\end{equation}
+so the oracle estimator is exactly $(K-p)$ times more efficient than the
+flexible estimator for every cell in the homogeneous group.
+The gain grows linearly in the number of cells that are correctly pooled:
+pooling together $K-p$ cells concentrates $(K-p)$ times as much effective
+sample size onto a single estimated coefficient as any individual flexible
+estimate.
+
+\bigskip
+
+\noindent\textbf{Bias of the pooled estimator under partial homogeneity.}
+While the oracle strictly improves on the flexible estimator without
+any bias cost, the fully pooled estimator obtains even lower variance by
+imposing equality across all $K$ cells --- including the $p$ that are
+genuinely heterogeneous.
+Under the oracle DGP \eqref{eq:oracle_model} with orthogonal dummies, the
+pooled estimator converges to
+\begin{equation}
+  \E\bigl[\hat\tau_{\text{pool}}\bigr]
+  = \sum_{k=1}^K w_k\,\tau_k^*
+  = \sum_{l=1}^p w_{k_l}\,\phi_l^*
+    + \phi_{p+1}^*\!\!\!\sum_{k\in C_{p+1}^*} w_k,
+  \label{eq:pool_plim}
+\end{equation}
+where $w_k = n_k/\sum_j n_j$.
+For a heterogeneous cell $k_l \in C_l^*$, $l \leq p$, the bias is
+\begin{equation}
+  \E\bigl[\hat\tau_{\text{pool}}\bigr] - \phi_l^*
+  = \sum_{j=1,j\neq l}^p w_{k_j}(\phi_j^* - \phi_l^*)
+    + \phi_{p+1}^*\!\!\!\sum_{k\in C_{p+1}^*} w_k - w_{k_l}\phi_l^*.
+  \label{eq:pool_bias_hetero}
+\end{equation}
+For a homogeneous cell $k \in C_{p+1}^*$, the bias is
+\begin{equation}
+  \E\bigl[\hat\tau_{\text{pool}}\bigr] - \phi_{p+1}^*
+  = \sum_{l=1}^p w_{k_l}(\phi_l^* - \phi_{p+1}^*).
+  \label{eq:pool_bias_homo}
+\end{equation}
+Both biases are non-zero whenever any heterogeneous cell differs from the
+homogeneous group ($\phi_l^* \neq \phi_{p+1}^*$ for some $l$).
+This contamination effect is a consequence of pooling across genuinely
+distinct effects: the treatment signals of the heterogeneous cells
+``bleed into'' the pooled estimate, and the homogeneous group's effect
+is estimated as a distorted mixture of all $K$ true parameters.
+Notably, the bias does not vanish as $n \to \infty$; with more data the
+pooled estimator converges to the wrong limit.
+
+\bigskip
+
+\noindent\textbf{The specification trade-off.}
+The findings above admit a unified description of the three estimators and
+the trade-off they face.
+Table~\ref{tab:spec_tradeoff} summarises the bias and variance of each
+estimator under the partial-homogeneity DGP \eqref{eq:oracle_model}
+for cells in the homogeneous group $C_{p+1}^*$ (the case where the
+distinction between estimators is sharpest).
+
+\begin{table}[ht]
+  \centering
+  \caption{Bias and variance under partial homogeneity for cells $k \in C_{p+1}^*$.
+    Balanced-panel approximation with $n_k = n$ for all $k$.}
+  \label{tab:spec_tradeoff}
+  \begin{tabular}{lcc}
+    \toprule
+    Estimator & Bias for $\tau_k^* = \phi_{p+1}^*$ & Variance \\
+    \midrule
+    Fully flexible  & $0$                              & $\sigma^2 / n$ \\[4pt]
+    Oracle ($\mathcal{P}^*$) & $0$               & $\sigma^2 / [(K-p)\,n]$ \\[4pt]
+    Fully pooled    & $\displaystyle\sum_{l=1}^p w_{k_l}(\phi_l^* - \phi_{p+1}^*)$ & $\sigma^2 / [K\,n]$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent The table reveals the core specification issue in staggered DiD.
+Moving from the flexible to the oracle specification reduces variance by a
+factor of $K-p$ at zero bias cost.
+Moving further to the pooled specification achieves an additional variance
+reduction (by an additional factor of $K/(K-p)$) but introduces a bias that
+does not vanish with sample size.
+The correct choice --- the oracle --- sits strictly between the two
+extremes: it is exactly as precise as the pooled estimator among all
+\emph{unbiased} estimators of $\phi_{p+1}^*$, and it is exactly as unbiased
+as the flexible estimator among all estimators that pool cells in $C_{p+1}^*$.
+
+The practical challenge is that $\mathcal{P}^*$ is unknown.
+A researcher who applies the fully flexible estimator by default leaves
+$(K-p-1)$ degrees of freedom on the table and may report unnecessarily
+wide confidence intervals.
+A researcher who collapses to a single pooled coefficient introduces
+bias that cannot be detected or corrected without additional structure.
+What is needed is a data-driven procedure that recovers $\mathcal{P}^*$
+--- or a close approximation --- from the observed data.
+The $\ell_0$-penalized greedy estimator and the Bayesian Dirichlet Process
+approach developed in the following sections provide two principled answers
+to this problem.
+
+\end{document}
