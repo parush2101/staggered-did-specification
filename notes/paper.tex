@@ -1,32 +1,22 @@
-\documentclass[12pt]{article}
+\documentclass[margin=3in, 12pt]{article}
 
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{geometry}
-\usepackage{setspace}
-\usepackage{booktabs}
-\usepackage{graphicx}
+\usepackage[utf8]{inputenc}
+\usepackage[affil-it]{authblk}
+\usepackage[margin=1in]{geometry}
 \usepackage{natbib}
-\usepackage{hyperref}
-\usepackage{xcolor}
-\usepackage{bm}
-\usepackage{bbm}
-\usepackage{caption}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{amstext}
 \usepackage{subcaption}
-\usepackage{array}
-\usepackage{multirow}
-\usepackage{enumitem}
-\usepackage{footnote}
-
-\geometry{margin=1.2in}
-\doublespacing
-
-\hypersetup{
-  colorlinks = true,
-  linkcolor  = blue!60!black,
-  citecolor  = blue!60!black,
-  urlcolor   = blue!60!black
-}
-
+\usepackage{amsthm}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{newpxtext,newpxmath}
+\usepackage{url}
+\usepackage{bm}
+\setlength{\parskip}{.75em}
+\geometry{margin=1in}
 \newtheorem{assumption}{Assumption}
 \newtheorem{proposition}{Proposition}
 \newtheorem{remark}{Remark}
@@ -43,17 +33,13 @@
 \newcommand{\Dtd}{\tilde{D}}
 \newcommand{\Xtd}{\tilde{X}}
 
-\title{\textbf{Data-Driven Model Specification in Staggered
-       Difference-in-Differences:\\
-       An $\ell_0$-Penalized and Bayesian Approach}%
-       \thanks{We thank seminar participants for helpful comments.
-       All code is available at
-       \url{https://github.com/parush2101/staggered-did-specification}.}}
-\author{}
-\date{\today}
+\title{\textbf{Specification in Flexible TWFE in Staggered
+       Timing and Partial Heterogeneous Effect}%
+       }
+\author{Parush Arora$^*$ and Rohan Wagle\thanks{Ashoka University.}}
+\date{}
 
 \begin{document}
-
 \maketitle
 
 % =============================================================================
@@ -69,26 +55,12 @@
   The fully pooled two-way fixed effects (TWFE) estimator, by contrast, is
   efficient but biased when heterogeneity is genuine.
   This paper proposes a data-driven model specification approach that occupies
-  the middle ground. We first develop a frequentist solution based on an
-  $\ell_0$ penalty on pairwise CATT differences: a greedy merging algorithm
-  recovers the correct grouping of CATTs in $O(K^3)$ time, where $K$ is the
-  number of CATT cells.
-  We then develop a Bayesian counterpart using a Dirichlet Process (DP) mixture
-  prior on CATT effects, implemented via a collapsed Gibbs sampler.
-  The Bayesian approach yields full posterior uncertainty over the grouping
-  structure, including co-clustering probabilities for every pair of CATTs.
-  A simulation study with a known two-group truth demonstrates that both
-  approaches recover the correct specification across a wide range of
-  parameters, achieving efficiency gains over the fully flexible estimator
-  without the bias of the pooled estimator.
-  The two methods are formally connected: the $\ell_0$ greedy estimator is
-  the maximum a posteriori (MAP) estimator under the DP prior.
+  the middle ground. We first develop a frequentist solution based on an $\ell_0$ penalty on pairwise CATT differences: a greedy merging algorithm recovers the correct grouping of CATTs in $O(K^3)$ time, where $K$ is the number of CATT cells. We then develop a Bayesian solution using a Dirichlet Process (DP) mixture prior on CATT, implemented via a collapsed Gibbs sampler. The Bayesian approach yields full posterior uncertainty over the grouping structure, including co-clustering probabilities for every pair of CATTs. A simulation study with a known two-group truth demonstrates that both approaches recover the correct specification across a wide range of parameters, achieving efficiency gains over the fully flexible estimator without the bias of the pooled estimator. The two methods are formally connected: the $\ell_0$ greedy estimator is the maximum a posteriori (MAP) estimator under the DP prior.
 \end{abstract}
 
 \bigskip
-\noindent\textbf{Keywords:} difference-in-differences, staggered treatment,
-TWFE, model specification, $\ell_0$ penalty, Dirichlet process, Gibbs sampler,
-treatment effect heterogeneity.
+\noindent\textbf{Keywords:} difference-in-differences, staggered treatment, TWFE, model specification, Bayesian estimation, Gibbs sampler,
+treatment effect heterogeneity, causal inference.
 
 \bigskip
 \noindent\textbf{JEL Codes:} C11, C14, C23, C52.
@@ -101,30 +73,21 @@ treatment effect heterogeneity.
 \section{Introduction}
 \label{sec:intro}
 
-Difference-in-differences (DiD) has become one of the workhorses of
-empirical economics. In its canonical form, a treatment group and a control
-group are observed before and after a single policy change, and the
-researcher estimates a single average treatment effect. Modern policy
-evaluations, however, rarely fit this clean template. Minimum wage increases,
-Medicaid expansions, trade liberalizations, and school reforms typically
-roll out across states, cities, or firms in a staggered fashion: different
-units adopt treatment at different calendar times.
+Difference-in-differences (DiD) has become one of the workhorses of empirical economics. In its canonical form, a treatment cohort and a control cohort are observed before and after a single policy change, and the researcher estimates a single average treatment effect (ATT or average treatment effect on treated). In a simple setting with two time periods, ATT is recovered by taking the difference between the change in the average outcome over time for the treatment and control cohorts, commonly referred to as a simple $2\times2$ DiD estimate. In general setting with $N$ observations and $T$ time periods, the most popular way to estimate ATT with a binary treatment indicator is by using the two-way fixed effect regression (TWFE) which is as follows:
+\begin{equation}
+\label{eq:rest_twfe}
+  Y_{it} = \alpha_i + \lambda_t + \theta D_{it} + \varepsilon_{it}
+\end{equation}
+where $Y_{it}$ is the observed outcome for $i^{th}$ unit in time $t$, $\alpha_i$ is the unit fixed effect, $\lambda_t$ is the time fixed effect, $D_{it}$ is the treatment dummy and $\theta$ is the ATT. We will refer to Eq.~\ref{eq:rest_twfe} as restricted TWFE. The restricted TWFE estimator ($\hat\theta_{\text{rest}}$) is directly related to the $2\times 2$ DiD estimator, as it can be represented as a weighted average of all possible 2$\times$2 DiD estimates (\cite{goodman2021}). 
 
-The econometrics of staggered DiD has seen remarkable progress in recent years.
-\citet{callaway2021}, \citet{sun2021}, \citet{goodman2021}, and
-\citet{borusyak2024}, among others, have shown that the classical two-way
-fixed effects (TWFE) regression can produce biased estimates of average
-treatment effects when there is heterogeneity in treatment effects across
-cohorts and time. The recommended solution is to estimate
-\emph{cohort-time average treatment effects on the treated} (CATTs) ---
-one coefficient per (cohort, calendar-time) cell --- and then aggregate them
-as desired.
 
-This fully flexible approach resolves the bias problem but introduces a new
-challenge: \emph{model specification}. With $G$ treated cohorts and $T$ time
-periods, there can be $K = \sum_g (T - g + 1)$ distinct CATT cells, easily
-reaching 12, 20, or more in realistic settings. Estimating all $K$ separately
-is unbiased but may be inefficient if some CATTs share the same true effect.
+Modern policy evaluations, however, rarely fit this clean template. Minimum wage increases, Medicaid expansions, trade liberalizations, and school reforms typically roll out across states, cities, or firms in a staggered fashion: different units adopt treatment at different calendar times. We update the notation for the observed outcome as $Y_{igt}$ and for the treatment dummy as $D_{igt}$ representing the $i^{th}$ unit belonging to cohort $g$ at time $t$. The estimator $\theta_{TWFE}$ is unbiased in staggered timing if the treatment effect for each $g\times t$ case (cohort-time specific ATT or CATT) is homogeneous.
+
+The econometrics of staggered DiD has seen remarkable progress in recent years. \cite{dechaisemartin2020}, \citet{callaway2021}, \citet{sun2021}, \citet{goodman2021}, \cite{gardner2022two}, and
+\citet{borusyak2024}, among others, have shown that the TWFE regression can produce a biased estimate of ATT when there is heterogeneity among CATTs. The bias arises due to the inclusion of an already treated cohort as a control, which violates the parallel trend assumption. \citet{goodman2021} showed that the decomposition of TWFE can potentially contain some negative weights when the treatment effects are heterogeneous. The recommended solution is to either drop the already treated cohorts from the control or estimate the CATTs one coefficient per (cohort-time) cell and then aggregate them as desired. For the later, \cite{wooldridge2025} discussed the fully flexible TWFE that allows interaction between the treatment dummy and the cohort-time dummy and recovers unbiased CATTs. Their estimate is identical to \cite{gardner2022two} and \citet{borusyak2024} in certain settings and more efficient than \cite{callaway2021} and \cite{sun2021} that drop the already treated cohorts from the control.
+
+This fully flexible approach solves the bias problem but introduces a new challenge: \emph{model specification}. With $G$ treated cohorts and $T$ time
+periods, there can be $K = \sum_g (T - g + 1)$ distinct CATT cells, where $g = 0$ represents the never-treated cohort and $g=2,3,\dotsc,T$ represents the period where the cohort got the treatment. Estimating all $K$ separately is unbiased, but may be inefficient if some CATTs share the same true effect.
 Conversely, pooling all CATTs into a single parameter (classical TWFE) is
 efficient but biased when effects genuinely differ across cohorts or periods.
 
@@ -135,142 +98,79 @@ the true partition, the estimator is both unbiased and more efficient than the
 fully flexible approach, exploiting the additional identifying restriction that
 some effects are equal without imposing false restrictions on others.
 
-This paper makes two main contributions. First, we formalize the
-specification problem and propose a frequentist solution based on an $\ell_0$
-penalty on pairwise CATT differences. The penalized objective counts the
-number of cross-group CATT pairs, and a greedy merging algorithm minimizes it
-in $O(K^3)$ time. The penalty parameter $L$ controls the strength of
-pooling: small $L$ recovers the fully flexible estimator, large $L$ collapses
-to the fully pooled estimator, and intermediate values recover the true
-partition when the data are informative.
+This paper makes three main contributions. First, we formalize the specification problem. To the best of our knowledge, this is the first paper to discuss the specification issue in the DiD framework with staggered timing and heterogeneous effects. We discuss how correct specification leads to gains in efficiency for the ATT estimator. Second, we propose a Bayesian solution that places a Dirichlet Process (DP) mixture prior over the space of partitions. The DP prior assigns positive probability to every partition while favoring parsimonious groupings. A collapsed Gibbs sampler provides draws from the posterior over partitions and CATT effects. The Bayesian approach produces full uncertainty quantification: not just point estimates but posterior distributions, standard errors, credible intervals, and
+co-clustering probabilities for every pair of CATTs. Third, we propose a frequentist solution based on a $\ell_0$ penalty on pairwise CATT differences. The penalized objective counts the number of pairs of cross-group CATT, and a greedy merging algorithm minimizes it in $O(K^3)$ time. The penalty parameter controls the strength of pooling: small values recover the fully flexible estimator, large values collapse
+to the fully pooled estimator, and intermediate values recover the true partition when the data are informative.
 
-Second, we develop a Bayesian counterpart that places a Dirichlet Process
-(DP) mixture prior over the space of partitions. The DP prior, implemented
-as a Chinese Restaurant Process, assigns positive probability to every
-partition while favouring parsimonious groupings. A collapsed Gibbs sampler
-provides draws from the posterior over partitions and CATT effects. The
-Bayesian approach produces full uncertainty quantification: not just point
-estimates but posterior distributions, credible intervals, and
-co-clustering probabilities for every pair of CATTs.
+Why had we used DP prior? In Bayesian estimation, it is the standard nonparametric prior for models where the number of components is unknown \citep{ferguson1973, antoniak1974}. \citet{escobar1995} show how the DP mixture models can be used for the density estimation and regression with an unknown number of mixture components. \citet{neal2000} develops efficient MCMC algorithms for posterior inference,
+including the collapsed Gibbs sampler that allows for efficient drawing from the posterior (which we employ). \citet{muller2004} provide
+a survey of nonparametric Bayesian methods for applied researchers. \citet{miller2018} study the finite mixture model with a prior on the number of components, which shares the spirit of our approach.
 
-A key theoretical result connects the two approaches: the $\ell_0$ greedy
-estimator is the MAP estimator of the Bayesian model under an exponential
-prior on cross-group pairs, with the penalty parameter $L$ equal to the
+Why had we used the $\ell_0$ penalty? Classical model selection criteria such as AIC \citep{akaike1974} and BIC \citep{schwarz1978} choose among nested models by penalizing the number of parameters. The $\ell_0$ penalty, which counts the number of non-zero coefficients, is the natural discrete analog, but is NP-hard to optimize exactly \citep{fan2001}. The discrete optimization tractable at the scales relevant for staggered DiD (typically $K \leq 50$). Lasso \citep{tibshirani1996} provides a convex relaxation, but produces continuous shrinkage rather than exact equality constraints.
+We focus on the $\ell_0$ formulation because we want exact grouping --- two CATTs either share a coefficient or do not. 
+
+A key theoretical result connects the two approaches: the $\ell_0$ greedy estimator is the MAP estimator of the Bayesian model under an exponential prior on cross-group pairs, with the penalty parameter equal to the
 product of the DP concentration parameter and the noise variance.
 
-A simulation study confirms the properties of both estimators in a
-controlled setting with a known two-group truth. The $\ell_0$ estimator with
-a well-chosen $L$ recovers the true partition in every replication, achieving
-substantial efficiency gains over the flexible estimator and zero bias ---
-in contrast to the biased pooled estimator. The Bayesian DP estimator
-produces co-clustering probabilities above 0.95 within true groups and
-exactly 0 across groups, and its posterior means replicate the efficiency
-gains of the frequentist approach.
+Our simulation study confirms the properties of both estimators in a controlled setting with a known two-group truth. The $\ell_0$ estimator with
+a well-chosen penalty recovers the true partition in every replication, achieving substantial efficiency gains over the flexible estimator and zero bias
+in contrast to the biased pool estimator. The Bayesian DP estimator produces co-clustering probabilities above 0.95 within true groups and
+exactly 0 across groups, and its posterior means replicate the efficiency gains of the frequentist approach.
 
-The remainder of the paper is organised as follows. Section~\ref{sec:lit}
-reviews the related literature. Section~\ref{sec:problem} formalizes the
-specification problem. Section~\ref{sec:freq} develops the $\ell_0$-penalized
-frequentist estimator. Section~\ref{sec:bayes} develops the Bayesian DP
-estimator and establishes its connection to the frequentist approach.
-Section~\ref{sec:sim} reports the simulation results. Section~\ref{sec:conc}
-concludes.
-
-% =============================================================================
-% 2. LITERATURE REVIEW
-% =============================================================================
-\section{Related Literature}
-\label{sec:lit}
-
-\paragraph{Staggered DiD.}
-The modern staggered DiD literature begins from the observation that TWFE
-with a binary treatment indicator is not generally a weighted average of
-underlying cohort-time effects when treatment effects are heterogeneous
-\citep{goodman2021, dechaisemartin2020, callaway2021, sun2021}.
-\citet{goodman2021} derives a Bacon decomposition showing that the TWFE
-coefficient is a weighted average of all $2\times 2$ DiD comparisons,
-with some weights potentially negative when treatment effects vary over time.
-\citet{dechaisemartin2020} proposes an alternative estimator robust to
-heterogeneous effects. \citet{callaway2021} and \citet{sun2021} advocate for
-first estimating CATTs and then aggregating, a strategy also recommended by
-\citet{borusyak2024} and \citet{roth2023}. \citet{wooldridge2025} shows
-that a TWFE regression with full cohort-time interactions is equivalent to
-the estimators of \citet{callaway2021} and \citet{sun2021} under parallel
-trends.
-
-Our paper takes the fully flexible CATT framework as the starting point
-and asks when and how these granular estimates can be restricted.
-
-\paragraph{Model selection in regression.}
-Classical model selection criteria such as AIC \citep{akaike1974} and BIC
-\citep{schwarz1978} choose among nested models by penalizing the number of
-parameters. The $\ell_0$ penalty, which counts the number of non-zero
-coefficients, is the natural discrete analogue but is NP-hard to optimize
-exactly \citep{fan2001}. The LASSO \citep{tibshirani1996} provides a convex
-relaxation. The fused LASSO \citep{tibshirani2005} penalizes pairwise
-differences between adjacent coefficients, which is closely related to our
-pairwise $\ell_0$ penalty but applies to ordered indices and produces
-continuous shrinkage rather than exact equality constraints.
-
-We focus on the $\ell_0$ formulation because (i) we want exact pooling ---
-two CATTs either share a coefficient or they do not --- and (ii) fixing the
-penalty parameter $L$ and using a greedy algorithm makes the discrete
-optimization tractable at the scales relevant for staggered DiD (typically
-$K \leq 30$).
-
-\paragraph{Bayesian nonparametrics.}
-The Dirichlet Process \citep{ferguson1973, antoniak1974} is the standard
-nonparametric prior for models where the number of components is unknown.
-\citet{escobar1995} show how DP mixture models can be used for density
-estimation and regression with an unknown number of mixture components.
-\citet{neal2000} develops efficient MCMC algorithms for posterior inference,
-including the collapsed Gibbs sampler we employ. \citet{muller2004} provide
-a survey of nonparametric Bayesian methods for applied researchers.
-\citet{miller2018} study the finite mixture model with a prior on the number
-of components, which shares the spirit of our approach.
-
-Our application of DP mixtures to the specification problem in
-staggered DiD is, to our knowledge, novel.
-
+The remainder of the paper is organized as follows. Section~\ref{sec:lit} reviews the related literature. Section~\ref{sec:problem} formalizes the specification problem. 
+Section~\ref{sec:freq} develops the $\ell_0$-penalized frequentist estimator. 
+Section~\ref{sec:bayes} develops the Bayesian DP estimator and establishes its connection to the frequentist approach.
+Section~\ref{sec:sim} reports the simulation results. Section~\ref{sec:conc} concludes.
 % =============================================================================
 % 3. THE SPECIFICATION PROBLEM
 % =============================================================================
-\section{The Specification Problem}
+\section{Setup and Assumptions}
 \label{sec:problem}
+Consider a balanced panel with $N$ units observed over $T$ time periods. We are interested in estimating the effect of a binary treatment, $D_{it} \in \{0,1\}$, on the outcome variable, $Y_{igt} \in \mathbb{R}$. Let's assume that we have the following sample $\{Y_{ig1},$ $\dotsc,Y_{igT}$ $,D_{ig1},$ $\dotsc,D_{igT}\}$ where $i = 1,\dotsc, N$ represents units and $t = 1,\dotsc, T$. Units belong to one of $g$ treated cohorts (indexed by treatment entry date $g \in \{2,3,\dotsc,T\} = \mathcal{G}$) or a never-treated group ($g=0$). Period 1 is assumed to be pre-treatment for all cohorts, which means $g\neq 1$. Let $N_g$ be the number of units in the cohort $g$ and thus $\sum_{g}N_g = N$. We make the following assumptions about the treatment process:
 
-\subsection{Setup}
+\begin{itemize}
+    \item[] \textbf{Assumption 1} (Random Sample): $\{Y_{ig1},\dotsc,Y_{igT}$ $,D_{i1},\dotsc,D_{iT}\}_{i=1}^{N}$ are independent and identically distributed. This assumption also implies that we have a balanced panel.
+    \item[] \textbf{Assumption 2} (Irreversibility of Treatment): It implies that once a unit is treated, that unit  remains treated in the next period. Units do not “forget” about the treatment experience. If $D_{i,t-1} = 1$ then $D_{i,t} = 1$.
+    \item[] \textbf{Assumption 3} (Parallel Trends): It implies that the expectation of $Y_{igt}$ without the treatment follows the same evolution over time in each $g$. This is equivalent to assuming that $E[Y_{igt}|D_{it} = 0] - E[Y_{ig,t-1}|D_{i,t-1} = 0]$ does not vary with $g$. We are making this assumption at the unit level (but our estimator is valid under the assumption of parallel trends at the cohort level as well). We assume that it holds after conditioning on covariates that allow for cases to account for 1) covariate specific trends in $Y_{igt}$ and 2) different distribution of covariates across cohorts.
+    \item[] \textbf{Assumption 4} (No Treatment Anticipation): There is no treatment effect in pre-treatment periods. The outcome $Y_{igt}$ in any period before $g$, on average, to be equal to the non treated outcome.
+\end{itemize}
+Under homogeneous effect, the CATTs are equal to ATT and thus $E[\theta_{\text{TWFE}}] = \theta$. \cite{goodman2021} demonstrated that $\hat\theta_{TWFE}$ can be expressed as a variance-weighted average of all possible $2 \times 2$ DiD comparisons. This decomposition reveals the implicit weighting scheme behind TWFE and clarifies the conditions under which it identifies the ATT. Under GB decomposition, the weights are non-negative and depend on 1) the relative variance of treatment timing between groups and 2) relative cohort sizes. 
 
-Consider a balanced panel with $N$ units observed over $T$ time periods.
-Units belong to one of $G$ treated cohorts (indexed by treatment entry date
-$g \in \mathcal{G}$) or a never-treated group. The post-treatment indicator
-for cohort $g$ at time $t$ is $D_{git} = \1\{i \in g,\; t \geq g\}$, and
-the cohort-time treatment dummy is $\mathbf{D}_{git} = \1\{i \in g,\; t = s\}$.
 
-The fully flexible TWFE model is
+Under heterogeneous effects, since CATTs are different, we define the true ATT as the weighted average of CATT.
+\begin{eqnarray}
+\label{eq:theta}
+	\theta = \sum_k\sum_g w_{gt}\tau_{gt} 
+\end{eqnarray}
+where $\tau_{gt}$ is the CATT for cohort $g$ at calendar time $t$. \cite{callaway2021} discusses different weighting schemes in Eq.~\ref{eq:theta}. Recent literature has found that $\hat\theta_{\text{rest}}$ is no longer an unbiased estimator of $\theta$. The bias arises due to the consideration of the already-treated group as a control (known as the forbidden comparison. Depending upon the intensity of the heteroskedasticity, some of the weights in \cite{goodman2021} decomposition can potentially become negative.
+
+To resolve the issue, many unbiased estimators are proposed in recent times. \cite{callaway2021} and \cite{sun2021} recommended considering only never treated or not yet treated cohorts as control. \cite{dechaisemartin2020} propose an unbiased estimate of ATT which is applicable in settings where treatment is allowed to be switched on (switchers in) and off (switchers out). \cite{liu2024practical}, \cite{borusyak2024} and \cite{gardner2022two} proposed the same estimator of ATT which is unbiased and efficient under the Gauss-Markov theorem. \cite{borusyak2024} estimated ATT by running a TWFE regression of the outcome on cohort and time fixed effects, and fixed effects for every treated $(g, g+k)$ cell. \cite{liu2024practical} proposed the same estimator and called it fixed effects
+counterfactual estimator. \cite{gardner2022two} recovered the same estimator of ATT by fitting a regression of the outcome on cohort and time fixed effects in the sample of never treated observations (first stage), and using that regression to predict the counterfactual outcome of treated observations (second stage). \cite{wooldridge2025} proposed fully flexible TWFE that allows interaction between the treatment dummy and the cohort-time dummy. The fully flexible TWFE model is
 \begin{equation}
-  y_{it} = \alpha_i + \lambda_t
-    + \sum_{g \in \mathcal{G}} \sum_{t \geq g} \tau_{gt}\, \mathbf{D}_{git}
+  Y_{igt} = \alpha_i + \lambda_t
+    + \sum_{g \in \mathcal{G}} \sum_{t \geq g} \tau_{gt}\, D_{igt}
     + \varepsilon_{it},
   \label{eq:twfe_flex}
 \end{equation}
-where $\alpha_i$ and $\lambda_t$ are unit and time fixed effects,
-$\tau_{gt}$ is the CATT for cohort $g$ at calendar time $t$, and
-$\varepsilon_{it}$ is an idiosyncratic error. Let $K = |\{(g,t): g \in
-\mathcal{G},\; t \geq g\}|$ denote the total number of CATT cells.
-
-\begin{assumption}[Parallel trends]
-  \label{ass:pt}
-  In the absence of treatment, the expected outcome of each cohort $g$ would
-  have followed the same time trend as the never-treated group:
-  $\E[Y_{it}(0) - Y_{it-1}(0) \mid i \in g] = \E[Y_{it}(0) - Y_{it-1}(0)
-  \mid i \in \infty]$ for all $g$ and $t$.
-\end{assumption}
-
-Under Assumption~\ref{ass:pt}, OLS on \eqref{eq:twfe_flex} identifies
-$\tau_{gt}$ for all $(g,t)$ \citep{callaway2021, sun2021, wooldridge2025}.
-We collect these into a vector $\bm{\tau} = (\tau_1, \ldots, \tau_K)'$,
-where we index cells by $k = 1, \ldots, K$ for compactness.
-
-\subsection{The Bias--Variance Trade-off}
+where $\alpha_i$ and $\lambda_t$ are unit and time fixed effects, and
+$\varepsilon_{it}$ is an idiosyncratic error. We can recover an unbiased estimate of ATT using Eq.~\ref{eq:twfe_flex} as
+\begin{eqnarray}
+\label{eq:theta}
+	\hat\theta_{\text{flex}} = \sum_k\sum_g w_{gt}\hat\tau_{gt} 
+\end{eqnarray}
+where $\hat\theta_{\text{flex}}$ is recovered from the fully flexible TWFE.
+\subsection{The Specification Problem}
+We will introduce matrix notation for brevity. Let $Y$ be the vector of outcomes and $D$ be the vector of treatment status. The ATT estimator from restricted TWFE $\hat\theta_{\text{rest}}$ is given as
+\begin{equation}
+    \hat\theta_{\text{rest}} = (D'MD)^{-1}D'MY
+\end{equation}
+where $M$ is a residual maker matrix with respect to $\alpha_i$ and $\lambda_t$ which is symmetric and idempotent. $MD$ and $MY$ are residualized treatment and outcome after accounting for the unit and time fixed effects. 
+but satisfies
+\begin{equation}
+  \E[\hat\tau_{\text{pool}}]
+    = \sum_{k=1}^{K} w_k \tau_k,
+    \qquad w_k = \frac{\|\tilde{d}_k\|^2}{\sum_j \|\tilde{d}_j\|^2},
+\end{equation}
 
 The fully flexible estimator $\hat{\bm{\tau}}_{\text{flex}}$ is unbiased
 but has variance
@@ -281,19 +181,13 @@ where $\tilde{D}$ is the within-transformed dummy matrix. The variance
 increases with $K$ because each parameter is estimated from a smaller share
 of the data.
 
-The fully pooled estimator $\hat\tau_{\text{pool}}$ --- the single-coefficient
-TWFE --- is efficient but satisfies
-\begin{equation}
-  \E[\hat\tau_{\text{pool}}]
-    = \sum_{k=1}^{K} w_k \tau_k,
-    \qquad w_k = \frac{\|\tilde{d}_k\|^2}{\sum_j \|\tilde{d}_j\|^2},
-\end{equation}
+
 a weighted average of true CATTs. When $\tau_k$ varies across $k$, this
 weighted average does not correspond to any policy-relevant parameter, and
 the estimator is \emph{misspecified}.
 
-\subsection{Partitions and the Specification Problem}
-
+Let $K = |\{(g,t): g \in
+\mathcal{G},\; t \geq g\}|$ denote the total number of CATT cells. 
 \begin{definition}[Partition]
   A \emph{partition} $\mathcal{P} = \{C_1, \ldots, C_m\}$ of $\{1, \ldots, K\}$
   is a collection of $m$ non-empty, mutually exclusive, exhaustive subsets
