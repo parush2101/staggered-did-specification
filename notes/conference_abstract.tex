@@ -1,0 +1,92 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{bm}
+
+\geometry{margin=1.2in}
+\onehalfspacing
+
+\title{\textbf{Data-Driven Model Specification in Staggered
+       Difference-in-Differences:\\
+       An $\ell_0$-Penalized and Bayesian Approach}\\[6pt]
+       \large Conference Abstract}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent
+Staggered difference-in-differences designs, in which units adopt treatment
+at different calendar times, have become a cornerstone of modern empirical
+research. Following a wave of methodological advances, the current best
+practice is to estimate Cohort-Average Treatment effects on the Treated
+(CATTs) --- one coefficient per cohort-time cell --- and aggregate them as
+needed. This approach eliminates the contamination bias that afflicts the
+classical two-way fixed effects (TWFE) estimator under treatment effect
+heterogeneity. Yet it raises an underappreciated follow-on question that
+this paper addresses directly: once the full set of CATTs is in hand, how
+should the researcher decide which of them are genuinely distinct and which
+can be pooled into a common coefficient?
+
+This specification question sits at the intersection of model selection and
+causal inference. Estimating all $K$ CATTs separately --- the fully flexible
+approach --- is unbiased but inefficient when some cells share the same true
+effect. Collapsing everything into a single pooled coefficient is efficient
+but introduces bias whenever effects genuinely differ across cohorts or time
+periods. The correct specification --- the unknown true partition of the $K$
+cells into groups of equal effects --- achieves both: it is unbiased and
+strictly more efficient than the fully flexible estimator, by a factor equal
+to the size of each correctly pooled group. Despite its importance,
+no systematic procedure for recovering this partition from data currently
+exists in the staggered DiD toolkit.
+
+We make two contributions. First, we develop a frequentist solution based
+on an $\ell_0$ penalty on pairwise CATT differences. The penalized objective
+counts the number of cross-group CATT pairs, and a greedy merging algorithm
+minimizes it in $O(K^3)$ time. The algorithm starts from the fully flexible
+partition and iteratively merges pairs of groups, accepting a merge when the
+increase in residual sum of squares is smaller than the penalty per
+eliminated cross-group pair. A threshold interpretation shows that two CATTs
+are pooled if and only if their squared difference, scaled by their harmonic
+mean effective sample size, falls below the penalty parameter $L$. This
+makes the method transparent and directly interpretable: the solution path
+--- the sequence of partitions as $L$ varies --- acts as a diagnostic for
+identifying a stable plateau at the true number of groups. We formally show
+that the $\ell_0$ greedy estimator recovers the true partition with
+probability approaching one as sample size grows, for any $L$ in a
+well-identified interval around the true signal-to-noise ratio.
+
+Second, we develop a Bayesian counterpart that places a Dirichlet Process
+(DP) mixture prior over the space of CATT partitions, implemented via a
+collapsed Gibbs sampler following Neal (2000). The DP prior assigns positive
+probability to every partition while naturally favouring parsimonious
+groupings through the Chinese Restaurant Process construction. In addition
+to posterior means and credible intervals for each CATT, the sampler
+produces co-clustering probabilities --- the posterior probability that any
+two cells belong to the same group --- providing a richer picture of
+partition uncertainty than any point-estimate method. We establish a formal
+connection between the two approaches: the $\ell_0$ greedy estimator is the
+maximum a posteriori (MAP) estimator of the Bayesian model, with the penalty
+parameter $L$ equal to the product of the DP concentration parameter and the
+noise variance. The two methods are therefore not alternatives but
+complements: the frequentist approach provides a fast, interpretable point
+estimate, while the Bayesian approach wraps it in principled uncertainty
+quantification.
+
+We validate both methods in a simulation study with $S = 500$ Monte Carlo
+replications. The design features $N = 400$ units, $T = 8$ periods, three
+treated cohorts, and $K = 12$ CATT cells arranged in a known two-group truth
+($\tau^* = 2$ for ten cells, $\tau^* = 4$ for two cells). Both the $\ell_0$
+estimator and the DP Gibbs sampler recover the true two-group partition
+reliably across all replications, achieving variance reductions of 14 percent
+in the larger group and 24 percent in the smaller group relative to the fully
+flexible estimator, with bias below 0.002 in every cell. The pooled estimator
+achieves slightly lower variance still, but at the cost of biases of $+0.60$
+and $-1.40$ treatment-effect units --- biases that do not shrink with sample
+size. The near-identical variance of the $\ell_0$ and DP estimators in the
+Monte Carlo confirms the MAP equivalence analytically derived in the paper.
+
+\end{document}
