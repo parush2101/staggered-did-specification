@@ -10,3 +10,6 @@ simulations/*.pdf
 
 # OS
 .DS_Store
+
+# Notes (kept locally, not on GitHub)
+notes/
