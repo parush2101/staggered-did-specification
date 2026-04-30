@@ -12,7 +12,6 @@
 # Estimators:
 #   - TWFE (naive pooled)
 #   - Gardner (2022) two-stage
-#   - Callaway & Sant'Anna (2021)
 #   - L0-penalised greedy (10 penalty values)
 #   - DP Bayes (collapsed Gibbs, diffuse priors)
 #
@@ -22,7 +21,6 @@
 # ============================================================
 
 library(fixest)
-library(did)
 library(data.table)
 
 # ---------- Constants ----------
@@ -168,35 +166,6 @@ estimate_gardner <- function(panel) {
   catt_df <- panel_local[D == 1, .(catt_est = mean(resid)), by = .(cohort, time)]
   cells   <- merge(as.data.table(CATT_CELLS), catt_df,
                    by = c("cohort", "time"), all.x = TRUE)
-  setorder(cells, cell_id)
-
-  list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE))
-}
-
-# ---------- Estimator: Callaway & Sant'Anna (2021) ----------
-
-estimate_cs <- function(panel) {
-  panel_df <- as.data.frame(panel)
-  result <- tryCatch(
-    att_gt(
-      yname         = "y",
-      tname         = "time",
-      idname        = "unit",
-      gname         = "cohort",
-      data          = panel_df,
-      control_group = "nevertreated",
-      panel         = TRUE,
-      bstrap        = FALSE,
-      cband         = FALSE,
-      est_method    = "reg"
-    ),
-    error = function(e) NULL
-  )
-  if (is.null(result)) return(list(catt = rep(NA_real_, K), att = NA_real_))
-
-  cs_df <- data.table(cohort = result$group, time = result$t, catt_est = result$att)
-  cells <- merge(as.data.table(CATT_CELLS), cs_df,
-                 by = c("cohort", "time"), all.x = TRUE)
   setorder(cells, cell_id)
 
   list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE))
@@ -360,7 +329,6 @@ for (s in seq_len(nrow(scenario_grid))) {
 
     twfe_out    <- estimate_twfe(panel)
     gardner_out <- estimate_gardner(panel)
-    cs_out      <- estimate_cs(panel)
     l0_out      <- estimate_l0_grid(flex$catt, n_per_cell, L_GRID)
     dp_out      <- estimate_dp_bayes(panel_dm, sigma2_hat)
 
@@ -371,8 +339,6 @@ for (s in seq_len(nrow(scenario_grid))) {
       method = "Flexible", catt = list(flex$catt), att = flex$att))
     rep_row <- rbind(rep_row, data.table(
       method = "Gardner", catt = list(gardner_out$catt), att = gardner_out$att))
-    rep_row <- rbind(rep_row, data.table(
-      method = "CS", catt = list(cs_out$catt), att = cs_out$att))
     rep_row <- rbind(rep_row, data.table(
       method = "DP Bayes", catt = list(dp_out$catt), att = dp_out$att))
     for (idx in seq_along(L_GRID)) {
@@ -442,7 +408,7 @@ for (item in results_all) {
 
 summary_df <- rbindlist(summary_rows)
 
-method_levels <- c("TWFE", "Gardner", "CS", "Flexible", "DP Bayes",
+method_levels <- c("TWFE", "Gardner", "Flexible", "DP Bayes",
                    sprintf("L0 (L=%.4g)", L_GRID))
 summary_df[, method := factor(method, levels = method_levels)]
 setorder(summary_df, cohort_size, structure, gap, method)
