@@ -1,0 +1,465 @@
+# ============================================================
+# Monte Carlo Simulation for Staggered DiD Specification
+#
+# Design grid:
+#   - T = 10
+#   - 4 cohorts: never-treated + treated at t = 3, 5, 7
+#   - Cohort sizes: N_per_cohort in {10, 50}
+#   - CATT structures: homogeneous, 6 partitions, fully heterogeneous
+#   - Effect spread (gap): small, big
+#   - 100 Monte Carlo replications per scenario
+#
+# Estimators:
+#   - TWFE (naive pooled)
+#   - Gardner (2022) two-stage
+#   - Callaway & Sant'Anna (2021)
+#   - L0-penalised greedy (10 penalty values)
+#   - DP Bayes (collapsed Gibbs, diffuse priors)
+#
+# Output:
+#   - Bias and variance for each estimator on the overall ATT and CATTs
+#   - Single summary table written to results/sim_summary.csv
+# ============================================================
+
+library(fixest)
+library(did)
+library(data.table)
+
+# ---------- Constants ----------
+
+N_MC          <- 100
+T_PERIODS     <- 10
+TREATED_GS    <- c(3, 5, 7)
+COHORT_SIZES  <- c(10, 50)
+SIGMA_EPS     <- 1.0
+GAP_VALUES    <- c(small = 1.0, big = 4.0)
+STRUCTURES    <- c("homog", "six_partition", "full_het")
+GAPS          <- c("small", "big")
+
+# DP Bayes
+N_GIBBS       <- 100
+ALPHA_DP      <- 1.0
+SIGMA0_SQ     <- 100.0    # diffuse base measure
+MU0           <- 0.0
+
+# L0 penalty grid: 10 log-spaced values spanning extreme cases
+L_GRID <- 10^seq(-2, 2, length.out = 10)
+
+set.seed(42)
+MC_SEEDS <- sample.int(1e7, N_MC)
+
+# ---------- CATT cells ----------
+
+build_catt_cells <- function() {
+  cells <- expand.grid(cohort = TREATED_GS, time = seq_len(T_PERIODS))
+  cells <- cells[cells$time >= cells$cohort, ]
+  cells <- cells[order(cells$cohort, cells$time), ]
+  cells$cell_id <- seq_len(nrow(cells))
+  rownames(cells) <- NULL
+  cells
+}
+
+CATT_CELLS <- build_catt_cells()
+K          <- nrow(CATT_CELLS)   # 8 + 6 + 4 = 18
+
+# ---------- True CATT vector by scenario ----------
+
+make_true_catts <- function(structure, gap_label) {
+  base   <- 2
+  spread <- GAP_VALUES[[gap_label]]
+
+  if (structure == "homog") {
+    catts    <- rep(base, K)
+    group_id <- rep(1L, K)
+  } else if (structure == "six_partition") {
+    group_vals <- seq(base - spread / 2, base + spread / 2, length.out = 6)
+    group_id   <- rep(1:6, each = 3)        # K = 18 = 6 * 3
+    catts      <- group_vals[group_id]
+  } else if (structure == "full_het") {
+    catts    <- seq(base - spread / 2, base + spread / 2, length.out = K)
+    group_id <- seq_len(K)
+  } else stop("Unknown structure: ", structure)
+
+  list(catts = catts, group_id = group_id)
+}
+
+# ---------- DGP ----------
+
+generate_panel <- function(N_per_cohort, true_catts, seed) {
+  set.seed(seed)
+
+  cohorts_all <- c(0, TREATED_GS)
+  N_total     <- N_per_cohort * length(cohorts_all)
+
+  unit_ids    <- seq_len(N_total)
+  unit_cohort <- rep(cohorts_all, each = N_per_cohort)
+  alpha_i     <- rnorm(N_total, mean = 0, sd = 1)
+
+  panel <- CJ(unit = unit_ids, time = seq_len(T_PERIODS))
+  panel[, cohort := unit_cohort[unit]]
+  panel[, alpha  := alpha_i[unit]]
+  panel[, lambda := 0.1 * (time - 1)]
+  panel[, D      := as.integer(cohort > 0 & time >= cohort)]
+
+  catt_lookup <- as.data.table(CATT_CELLS)
+  catt_lookup[, tau_true := true_catts]
+
+  panel <- merge(panel, catt_lookup[, .(cohort, time, tau_true)],
+                 by = c("cohort", "time"), all.x = TRUE)
+  panel[is.na(tau_true), tau_true := 0]
+
+  panel[, eps := rnorm(.N, mean = 0, sd = SIGMA_EPS)]
+  panel[, y   := alpha + lambda + D * tau_true + eps]
+
+  setorder(panel, unit, time)
+
+  for (k in seq_len(K)) {
+    g_k <- CATT_CELLS$cohort[k]
+    t_k <- CATT_CELLS$time[k]
+    panel[, paste0("D_", k) := as.integer(cohort == g_k & time == t_k)]
+  }
+
+  panel[]
+}
+
+# ---------- Within transformation ----------
+
+within_transform <- function(panel) {
+  cols <- c("y", paste0("D_", seq_len(K)))
+  out  <- copy(panel)
+  for (col in cols) {
+    out[, paste0(col, "_unit")  := mean(get(col)), by = unit]
+    out[, paste0(col, "_time")  := mean(get(col)), by = time]
+    grand <- mean(out[[col]])
+    out[, paste0(col, "_dm")    := get(col) - get(paste0(col, "_unit")) -
+                                    get(paste0(col, "_time")) + grand]
+  }
+  out
+}
+
+# ---------- Estimator: TWFE (naive pooled) ----------
+
+estimate_twfe <- function(panel) {
+  fit     <- feols(y ~ D | unit + time, data = panel)
+  tau_hat <- as.numeric(coef(fit)["D"])
+  list(catt = rep(tau_hat, K), att = tau_hat)
+}
+
+# ---------- Estimator: Fully flexible (used by L0 and DP) ----------
+
+estimate_flexible <- function(panel_dm) {
+  X <- as.matrix(panel_dm[, paste0("D_", seq_len(K), "_dm"), with = FALSE])
+  y <- panel_dm$y_dm
+  XtX_inv <- solve(crossprod(X))
+  beta    <- as.numeric(XtX_inv %*% crossprod(X, y))
+  resid   <- y - X %*% beta
+  rss     <- sum(resid^2)
+  list(catt = beta, att = mean(beta), rss = rss, XtX_inv = XtX_inv, X = X, y = y)
+}
+
+# ---------- Estimator: Gardner (2022) two-stage ----------
+
+estimate_gardner <- function(panel) {
+  fit_y0 <- feols(y ~ 1 | unit + time, data = panel[D == 0])
+  panel_local <- copy(panel)
+  panel_local[, y0_hat := predict(fit_y0, newdata = panel_local)]
+  panel_local[, resid  := y - y0_hat]
+
+  catt_df <- panel_local[D == 1, .(catt_est = mean(resid)), by = .(cohort, time)]
+  cells   <- merge(as.data.table(CATT_CELLS), catt_df,
+                   by = c("cohort", "time"), all.x = TRUE)
+  setorder(cells, cell_id)
+
+  list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE))
+}
+
+# ---------- Estimator: Callaway & Sant'Anna (2021) ----------
+
+estimate_cs <- function(panel) {
+  panel_df <- as.data.frame(panel)
+  result <- tryCatch(
+    att_gt(
+      yname         = "y",
+      tname         = "time",
+      idname        = "unit",
+      gname         = "cohort",
+      data          = panel_df,
+      control_group = "nevertreated",
+      panel         = TRUE,
+      bstrap        = FALSE,
+      cband         = FALSE,
+      est_method    = "reg"
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(result)) return(list(catt = rep(NA_real_, K), att = NA_real_))
+
+  cs_df <- data.table(cohort = result$group, time = result$t, catt_est = result$att)
+  cells <- merge(as.data.table(CATT_CELLS), cs_df,
+                 by = c("cohort", "time"), all.x = TRUE)
+  setorder(cells, cell_id)
+
+  list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE))
+}
+
+# ---------- Estimator: L0 greedy (multiple L values) ----------
+
+estimate_l0_grid <- function(flex_catts, n_per_cell, L_values) {
+  results <- vector("list", length(L_values))
+  names(results) <- paste0("L_", formatC(L_values, format = "g", digits = 4))
+
+  for (idx in seq_along(L_values)) {
+    L      <- L_values[idx]
+    groups <- as.list(seq_len(K))
+    n_grp  <- n_per_cell
+    tau_grp <- flex_catts
+
+    repeat {
+      m         <- length(groups)
+      if (m == 1L) break
+      best_dobj <- Inf
+      best_pair <- NULL
+
+      for (i in seq_len(m - 1)) {
+        for (j in (i + 1):m) {
+          cross_pairs <- length(groups[[i]]) * length(groups[[j]])
+          ni <- n_grp[i]; nj <- n_grp[j]
+          delta_rss   <- (ni * nj / (ni + nj)) * (tau_grp[i] - tau_grp[j])^2
+          delta_obj   <- delta_rss - L * cross_pairs
+          if (delta_obj < best_dobj) {
+            best_dobj <- delta_obj
+            best_pair <- c(i, j)
+          }
+        }
+      }
+      if (best_dobj >= 0) break
+
+      i <- best_pair[1]; j <- best_pair[2]
+      ni <- n_grp[i]; nj <- n_grp[j]
+      pooled <- (ni * tau_grp[i] + nj * tau_grp[j]) / (ni + nj)
+
+      groups[[i]]  <- c(groups[[i]], groups[[j]])
+      tau_grp[i]   <- pooled
+      n_grp[i]     <- ni + nj
+      groups[[j]]  <- NULL
+      tau_grp      <- tau_grp[-j]
+      n_grp        <- n_grp[-j]
+    }
+
+    catt_est <- numeric(K)
+    for (g in seq_along(groups)) catt_est[groups[[g]]] <- tau_grp[g]
+
+    results[[idx]] <- list(
+      L        = L,
+      catt     = catt_est,
+      att      = mean(catt_est),
+      n_groups = length(groups)
+    )
+  }
+  results
+}
+
+# ---------- Estimator: DP Bayes (collapsed Gibbs) ----------
+
+estimate_dp_bayes <- function(panel_dm, sigma2_hat) {
+  X  <- as.matrix(panel_dm[, paste0("D_", seq_len(K), "_dm"), with = FALSE])
+  y  <- panel_dm$y_dm
+  NT <- length(y)
+  kappa <- SIGMA0_SQ / sigma2_hat
+
+  log_marg_lik <- function(z_relab) {
+    m <- max(z_relab)
+    Xg <- matrix(0, nrow = NT, ncol = m)
+    for (l in seq_len(m)) Xg[, l] <- rowSums(X[, z_relab == l, drop = FALSE])
+    A   <- diag(m) + kappa * crossprod(Xg)
+    Xty <- crossprod(Xg, y)
+    -0.5 * as.numeric(determinant(A, logarithm = TRUE)$modulus) +
+      kappa / (2 * sigma2_hat) * as.numeric(t(Xty) %*% solve(A, Xty))
+  }
+
+  z <- seq_len(K)                                        # singletons
+  theta_draws <- matrix(NA_real_, nrow = N_GIBBS, ncol = K)
+
+  for (iter in seq_len(N_GIBBS)) {
+
+    for (k in seq_len(K)) {
+      z_minus_k       <- z[-k]
+      unique_clusters <- sort(unique(z_minus_k))
+      n_minus_k       <- tabulate(z_minus_k, nbins = max(z))
+      c_new           <- max(z) + 1L
+      candidates      <- c(unique_clusters, c_new)
+      log_probs       <- numeric(length(candidates))
+
+      for (idx in seq_along(candidates)) {
+        c_cand  <- candidates[idx]
+        z_trial <- z; z_trial[k] <- c_cand
+        z_trial <- match(z_trial, sort(unique(z_trial)))
+        crp_wt  <- if (c_cand == c_new) ALPHA_DP else n_minus_k[c_cand]
+        log_probs[idx] <- log(crp_wt) + log_marg_lik(z_trial)
+      }
+
+      log_probs <- log_probs - max(log_probs)
+      probs     <- exp(log_probs) / sum(exp(log_probs))
+      z[k]      <- candidates[sample(length(candidates), 1L, prob = probs)]
+      z         <- match(z, sort(unique(z)))
+    }
+
+    m  <- max(z)
+    Xg <- matrix(0, nrow = NT, ncol = m)
+    for (l in seq_len(m)) Xg[, l] <- rowSums(X[, z == l, drop = FALSE])
+    Sigma_star <- solve(crossprod(Xg) / sigma2_hat + diag(m) / SIGMA0_SQ)
+    mu_star    <- Sigma_star %*% (crossprod(Xg, y) / sigma2_hat +
+                                  MU0 * rep(1, m) / SIGMA0_SQ)
+    L_chol <- tryCatch(chol(Sigma_star),
+                       error = function(e) chol(Sigma_star + 1e-8 * diag(m)))
+    phi <- as.numeric(mu_star) + as.numeric(t(L_chol) %*% rnorm(m))
+    theta_draws[iter, ] <- phi[z]
+  }
+
+  catt_mean <- colMeans(theta_draws)
+  list(catt = catt_mean, att = mean(catt_mean))
+}
+
+# ---------- Main MC loop ----------
+
+scenario_grid <- expand.grid(
+  cohort_size = COHORT_SIZES,
+  structure   = STRUCTURES,
+  gap         = GAPS,
+  stringsAsFactors = FALSE
+)
+
+results_all <- list()
+row_counter <- 1L
+
+for (s in seq_len(nrow(scenario_grid))) {
+
+  cohort_size <- scenario_grid$cohort_size[s]
+  structure   <- scenario_grid$structure[s]
+  gap         <- scenario_grid$gap[s]
+
+  truth      <- make_true_catts(structure, gap)
+  true_catts <- truth$catts
+  true_att   <- mean(true_catts)
+  n_per_cell <- rep(cohort_size, K)
+
+  cat(sprintf("Scenario %d/%d: N_per_cohort=%d, structure=%s, gap=%s\n",
+              s, nrow(scenario_grid), cohort_size, structure, gap))
+
+  rep_storage <- list()
+
+  for (rep in seq_len(N_MC)) {
+
+    panel    <- generate_panel(cohort_size, true_catts, MC_SEEDS[rep])
+    panel_dm <- within_transform(panel)
+
+    flex     <- estimate_flexible(panel_dm)
+    df_resid <- nrow(panel_dm) - length(unique(panel$unit)) -
+                length(unique(panel$time)) + 1 - K
+    sigma2_hat <- flex$rss / df_resid
+
+    twfe_out    <- estimate_twfe(panel)
+    gardner_out <- estimate_gardner(panel)
+    cs_out      <- estimate_cs(panel)
+    l0_out      <- estimate_l0_grid(flex$catt, n_per_cell, L_GRID)
+    dp_out      <- estimate_dp_bayes(panel_dm, sigma2_hat)
+
+    rep_row <- data.table()
+    rep_row <- rbind(rep_row, data.table(
+      method = "TWFE", catt = list(twfe_out$catt), att = twfe_out$att))
+    rep_row <- rbind(rep_row, data.table(
+      method = "Flexible", catt = list(flex$catt), att = flex$att))
+    rep_row <- rbind(rep_row, data.table(
+      method = "Gardner", catt = list(gardner_out$catt), att = gardner_out$att))
+    rep_row <- rbind(rep_row, data.table(
+      method = "CS", catt = list(cs_out$catt), att = cs_out$att))
+    rep_row <- rbind(rep_row, data.table(
+      method = "DP Bayes", catt = list(dp_out$catt), att = dp_out$att))
+    for (idx in seq_along(L_GRID)) {
+      rep_row <- rbind(rep_row, data.table(
+        method = sprintf("L0 (L=%.4g)", L_GRID[idx]),
+        catt   = list(l0_out[[idx]]$catt),
+        att    = l0_out[[idx]]$att))
+    }
+
+    rep_row[, replication := rep]
+    rep_row[, cohort_size := cohort_size]
+    rep_row[, structure   := structure]
+    rep_row[, gap         := gap]
+
+    rep_storage[[rep]] <- rep_row
+  }
+
+  results_all[[row_counter]] <- list(
+    scenario   = scenario_grid[s, ],
+    true_catts = true_catts,
+    true_att   = true_att,
+    raw        = rbindlist(rep_storage)
+  )
+  row_counter <- row_counter + 1L
+}
+
+# ---------- Aggregate: bias and variance ----------
+
+summary_rows <- list()
+
+for (item in results_all) {
+
+  scen       <- item$scenario
+  true_catts <- item$true_catts
+  true_att   <- item$true_att
+  raw        <- item$raw
+
+  for (mth in unique(raw$method)) {
+    sub <- raw[method == mth]
+
+    att_vec  <- sub$att
+    att_bias <- mean(att_vec, na.rm = TRUE) - true_att
+    att_var  <- var(att_vec, na.rm = TRUE)
+
+    catt_mat  <- do.call(rbind, sub$catt)        # N_MC x K
+    catt_mean <- colMeans(catt_mat, na.rm = TRUE)
+    catt_var  <- apply(catt_mat, 2, var, na.rm = TRUE)
+    catt_bias <- catt_mean - true_catts
+
+    avg_abs_bias_catt <- mean(abs(catt_bias), na.rm = TRUE)
+    avg_var_catt      <- mean(catt_var, na.rm = TRUE)
+    rmse_catt         <- sqrt(mean(catt_bias^2 + catt_var, na.rm = TRUE))
+
+    summary_rows[[length(summary_rows) + 1]] <- data.table(
+      cohort_size       = scen$cohort_size,
+      structure         = scen$structure,
+      gap               = scen$gap,
+      method            = mth,
+      ATT_bias          = att_bias,
+      ATT_variance      = att_var,
+      CATT_avg_abs_bias = avg_abs_bias_catt,
+      CATT_avg_variance = avg_var_catt,
+      CATT_rmse         = rmse_catt
+    )
+  }
+}
+
+summary_df <- rbindlist(summary_rows)
+
+method_levels <- c("TWFE", "Gardner", "CS", "Flexible", "DP Bayes",
+                   sprintf("L0 (L=%.4g)", L_GRID))
+summary_df[, method := factor(method, levels = method_levels)]
+setorder(summary_df, cohort_size, structure, gap, method)
+
+num_cols <- c("ATT_bias", "ATT_variance",
+              "CATT_avg_abs_bias", "CATT_avg_variance", "CATT_rmse")
+summary_df[, (num_cols) := lapply(.SD, round, 4), .SDcols = num_cols]
+
+# ---------- Final summary table ----------
+
+print(summary_df)
+
+dir.create("results", showWarnings = FALSE)
+fwrite(summary_df, "results/sim_summary.csv")
+
+cat("\nSaved summary to results/sim_summary.csv\n")
+cat("Scenarios run:", nrow(scenario_grid), "\n")
+cat("Methods compared:", length(method_levels),
+    "(including", length(L_GRID), "L0 penalty values)\n")
+cat("Replications per scenario:", N_MC, "\n")
