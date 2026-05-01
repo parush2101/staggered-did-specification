@@ -36,8 +36,8 @@ GAPS          <- c("small", "big")
 
 # DP Bayes
 N_GIBBS       <- 100
-ALPHA_DP      <- 1.0
-SIGMA0_SQ     <- 100.0    # diffuse base measure
+ALPHA_DP_GRID <- c(1.0, 20.0)   # concentration: 1 favours few clusters, 20 favours many
+SIGMA0_SQ     <- 100.0          # diffuse base measure
 MU0           <- 0.0
 
 # L0 penalty grid: 10 log-spaced values spanning extreme cases
@@ -230,7 +230,7 @@ estimate_l0_grid <- function(flex_catts, n_per_cell, L_values) {
 
 # ---------- Estimator: DP Bayes (collapsed Gibbs) ----------
 
-estimate_dp_bayes <- function(panel_dm, sigma2_hat) {
+estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
   X  <- as.matrix(panel_dm[, paste0("D_", seq_len(K), "_dm"), with = FALSE])
   y  <- panel_dm$y_dm
   NT <- length(y)
@@ -263,7 +263,7 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat) {
         c_cand  <- candidates[idx]
         z_trial <- z; z_trial[k] <- c_cand
         z_trial <- match(z_trial, sort(unique(z_trial)))
-        crp_wt  <- if (c_cand == c_new) ALPHA_DP else n_minus_k[c_cand]
+        crp_wt  <- if (c_cand == c_new) alpha else n_minus_k[c_cand]
         log_probs[idx] <- log(crp_wt) + log_marg_lik(z_trial)
       }
 
@@ -330,7 +330,9 @@ for (s in seq_len(nrow(scenario_grid))) {
     twfe_out    <- estimate_twfe(panel)
     gardner_out <- estimate_gardner(panel)
     l0_out      <- estimate_l0_grid(flex$catt, n_per_cell, L_GRID)
-    dp_out      <- estimate_dp_bayes(panel_dm, sigma2_hat)
+    dp_out_list <- lapply(ALPHA_DP_GRID, function(a)
+      estimate_dp_bayes(panel_dm, sigma2_hat, alpha = a))
+    names(dp_out_list) <- sprintf("alpha=%g", ALPHA_DP_GRID)
 
     rep_row <- data.table()
     rep_row <- rbind(rep_row, data.table(
@@ -339,8 +341,13 @@ for (s in seq_len(nrow(scenario_grid))) {
       method = "Flexible", catt = list(flex$catt), att = flex$att))
     rep_row <- rbind(rep_row, data.table(
       method = "Gardner", catt = list(gardner_out$catt), att = gardner_out$att))
-    rep_row <- rbind(rep_row, data.table(
-      method = "DP Bayes", catt = list(dp_out$catt), att = dp_out$att))
+    for (a_idx in seq_along(ALPHA_DP_GRID)) {
+      a_val <- ALPHA_DP_GRID[a_idx]
+      rep_row <- rbind(rep_row, data.table(
+        method = sprintf("DP Bayes (alpha=%g)", a_val),
+        catt   = list(dp_out_list[[a_idx]]$catt),
+        att    = dp_out_list[[a_idx]]$att))
+    }
     for (idx in seq_along(L_GRID)) {
       rep_row <- rbind(rep_row, data.table(
         method = sprintf("L0 (L=%.4g)", L_GRID[idx]),
@@ -408,7 +415,8 @@ for (item in results_all) {
 
 summary_df <- rbindlist(summary_rows)
 
-method_levels <- c("TWFE", "Gardner", "Flexible", "DP Bayes",
+method_levels <- c("TWFE", "Gardner", "Flexible",
+                   sprintf("DP Bayes (alpha=%g)", ALPHA_DP_GRID),
                    sprintf("L0 (L=%.4g)", L_GRID))
 summary_df[, method := factor(method, levels = method_levels)]
 setorder(summary_df, cohort_size, structure, gap, method)
