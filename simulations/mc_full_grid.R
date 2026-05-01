@@ -82,6 +82,39 @@ aggregate_calendar_time <- function(catt_vec) {
   sum(theta_c[2:T_PERIODS], na.rm = TRUE) / (T_PERIODS - 1)
 }
 
+# Event-time aggregation, CS eqs. (3.4) and (3.12):
+#   theta_es(e) = sum_g 1{g+e <= T} P(G=g | G+e <= T) ATT(g, g+e)
+#   theta^O_es  = (1 / (T-1)) sum_{e=0}^{T-2} theta_es(e)
+# Uniform cohort sizes => P(G=g | G+e <= T) = 1 / #{eligible cohorts at e}.
+
+aggregate_event_time <- function(catt_vec) {
+  theta_es <- numeric(T_PERIODS - 1)        # event times e = 0,...,T-2
+  for (e_idx in seq_along(theta_es)) {
+    e <- e_idx - 1L
+    g_eligible <- TREATED_GS[TREATED_GS + e <= T_PERIODS]
+    if (length(g_eligible) == 0L) { theta_es[e_idx] <- 0; next }
+    att_ge <- vapply(g_eligible, function(g) {
+      idx <- which(CATT_CELLS$cohort == g & CATT_CELLS$time == g + e)
+      if (length(idx) == 0L) NA_real_ else catt_vec[idx]
+    }, numeric(1))
+    theta_es[e_idx] <- mean(att_ge, na.rm = TRUE)
+  }
+  sum(theta_es, na.rm = TRUE) / (T_PERIODS - 1)
+}
+
+# Selection-style overall ATT, CS eqs. (3.7) and (3.11):
+#   theta_sel(g) = (1 / (T - g + 1)) sum_{t=g}^T ATT(g, t)
+#   theta^O_sel  = sum_g theta_sel(g) P(G=g | G <= T)
+# Uniform cohort sizes => weights are uniform across treated cohorts.
+
+aggregate_selection <- function(catt_vec) {
+  theta_sel <- vapply(TREATED_GS, function(g) {
+    cells_g <- which(CATT_CELLS$cohort == g)
+    mean(catt_vec[cells_g], na.rm = TRUE)
+  }, numeric(1))
+  mean(theta_sel, na.rm = TRUE)
+}
+
 # ---------- True CATT vector by scenario ----------
 
 make_true_catts <- function(structure) {
@@ -164,7 +197,7 @@ estimate_twfe <- function(panel) {
   fit     <- feols(y ~ D | unit + time, data = panel)
   tau_hat <- as.numeric(coef(fit)["D"])
   catt    <- rep(tau_hat, K)
-  list(catt = catt, att = aggregate_calendar_time(catt), n_partitions = 1L)
+  list(catt = catt, n_partitions = 1L)
 }
 
 # ---------- Estimator: Fully flexible (used by L0 and DP) ----------
@@ -176,8 +209,7 @@ estimate_flexible <- function(panel_dm) {
   beta    <- as.numeric(XtX_inv %*% crossprod(X, y))
   resid   <- y - X %*% beta
   rss     <- sum(resid^2)
-  list(catt = beta, att = aggregate_calendar_time(beta),
-       rss = rss, XtX_inv = XtX_inv, X = X, y = y,
+  list(catt = beta, rss = rss, XtX_inv = XtX_inv, X = X, y = y,
        n_partitions = K)
 }
 
@@ -195,7 +227,6 @@ estimate_gardner <- function(panel) {
   setorder(cells, cell_id)
 
   list(catt = cells$catt_est,
-       att  = aggregate_calendar_time(cells$catt_est),
        n_partitions = sum(!is.na(cells$catt_est)))
 }
 
@@ -249,7 +280,6 @@ estimate_l0_grid <- function(flex_catts, n_per_cell, L_values) {
     results[[idx]] <- list(
       L        = L,
       catt     = catt_est,
-      att      = aggregate_calendar_time(catt_est),
       n_groups = length(groups)
     )
   }
@@ -317,7 +347,6 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
 
   catt_mean <- colMeans(theta_draws)
   list(catt = catt_mean,
-       att  = aggregate_calendar_time(catt_mean),
        n_partitions = mean(n_clusters_trace))
 }
 
@@ -337,9 +366,11 @@ for (s in seq_len(nrow(scenario_grid))) {
   cohort_size <- scenario_grid$cohort_size[s]
   structure   <- scenario_grid$structure[s]
 
-  truth      <- make_true_catts(structure)
-  true_catts <- truth$catts
-  true_att   <- aggregate_calendar_time(true_catts)
+  truth        <- make_true_catts(structure)
+  true_catts   <- truth$catts
+  true_att_c   <- aggregate_calendar_time(true_catts)
+  true_att_es  <- aggregate_event_time(true_catts)
+  true_att_sel <- aggregate_selection(true_catts)
   true_n_partitions <- length(unique(truth$group_id))
   n_per_cell <- rep(cohort_size, K)
 
@@ -367,27 +398,25 @@ for (s in seq_len(nrow(scenario_grid))) {
 
     rep_row <- data.table()
     rep_row <- rbind(rep_row, data.table(
-      method = "TWFE", catt = list(twfe_out$catt), att = twfe_out$att,
+      method = "TWFE", catt = list(twfe_out$catt),
       n_partitions = twfe_out$n_partitions))
     rep_row <- rbind(rep_row, data.table(
-      method = "Flexible", catt = list(flex$catt), att = flex$att,
+      method = "Flexible", catt = list(flex$catt),
       n_partitions = flex$n_partitions))
     rep_row <- rbind(rep_row, data.table(
-      method = "Gardner", catt = list(gardner_out$catt), att = gardner_out$att,
+      method = "Gardner", catt = list(gardner_out$catt),
       n_partitions = gardner_out$n_partitions))
     for (a_idx in seq_along(ALPHA_DP_GRID)) {
       a_val <- ALPHA_DP_GRID[a_idx]
       rep_row <- rbind(rep_row, data.table(
         method = sprintf("DP Bayes (alpha=%g)", a_val),
         catt   = list(dp_out_list[[a_idx]]$catt),
-        att    = dp_out_list[[a_idx]]$att,
         n_partitions = dp_out_list[[a_idx]]$n_partitions))
     }
     for (idx in seq_along(L_GRID)) {
       rep_row <- rbind(rep_row, data.table(
         method = sprintf("L0 (L=%.4g)", L_GRID[idx]),
         catt   = list(l0_out[[idx]]$catt),
-        att    = l0_out[[idx]]$att,
         n_partitions = l0_out[[idx]]$n_groups))
     }
 
@@ -401,7 +430,9 @@ for (s in seq_len(nrow(scenario_grid))) {
   results_all[[row_counter]] <- list(
     scenario          = scenario_grid[s, ],
     true_catts        = true_catts,
-    true_att          = true_att,
+    true_att_c        = true_att_c,
+    true_att_es       = true_att_es,
+    true_att_sel      = true_att_sel,
     true_n_partitions = true_n_partitions,
     raw               = rbindlist(rep_storage)
   )
@@ -414,18 +445,28 @@ summary_rows <- list()
 
 for (item in results_all) {
 
-  scen       <- item$scenario
-  true_catts <- item$true_catts
-  true_att   <- item$true_att
-  true_m     <- item$true_n_partitions
-  raw        <- item$raw
+  scen         <- item$scenario
+  true_catts   <- item$true_catts
+  true_att_c   <- item$true_att_c
+  true_att_es  <- item$true_att_es
+  true_att_sel <- item$true_att_sel
+  true_m       <- item$true_n_partitions
+  raw          <- item$raw
 
   for (mth in unique(raw$method)) {
     sub <- raw[method == mth]
 
-    att_vec  <- sub$att
-    att_bias <- mean(att_vec, na.rm = TRUE) - true_att
-    att_var  <- var(att_vec, na.rm = TRUE)
+    # Recompute the three ATTs from each replication's CATT vector
+    att_c_vec   <- vapply(sub$catt, aggregate_calendar_time, numeric(1))
+    att_es_vec  <- vapply(sub$catt, aggregate_event_time,    numeric(1))
+    att_sel_vec <- vapply(sub$catt, aggregate_selection,     numeric(1))
+
+    att_c_bias    <- mean(att_c_vec,   na.rm = TRUE) - true_att_c
+    att_c_var     <- var(att_c_vec,    na.rm = TRUE)
+    att_es_bias   <- mean(att_es_vec,  na.rm = TRUE) - true_att_es
+    att_es_var    <- var(att_es_vec,   na.rm = TRUE)
+    att_sel_bias  <- mean(att_sel_vec, na.rm = TRUE) - true_att_sel
+    att_sel_var   <- var(att_sel_vec,  na.rm = TRUE)
 
     catt_mat  <- do.call(rbind, sub$catt)        # N_MC x K
     catt_mean <- colMeans(catt_mat, na.rm = TRUE)
@@ -443,8 +484,12 @@ for (item in results_all) {
       true_partitions    = true_m,
       method             = mth,
       avg_n_partitions   = avg_n_partitions,
-      ATT_bias           = att_bias,
-      ATT_variance       = att_var,
+      ATT_c_bias         = att_c_bias,
+      ATT_c_variance     = att_c_var,
+      ATT_es_bias        = att_es_bias,
+      ATT_es_variance    = att_es_var,
+      ATT_sel_bias       = att_sel_bias,
+      ATT_sel_variance   = att_sel_var,
       CATT_avg_abs_bias  = avg_abs_bias_catt,
       CATT_avg_variance  = avg_var_catt,
       CATT_rmse          = rmse_catt
@@ -460,7 +505,10 @@ method_levels <- c("TWFE", "Gardner", "Flexible",
 summary_df[, method := factor(method, levels = method_levels)]
 setorder(summary_df, cohort_size, structure, method)
 
-num_cols <- c("avg_n_partitions", "ATT_bias", "ATT_variance",
+num_cols <- c("avg_n_partitions",
+              "ATT_c_bias", "ATT_c_variance",
+              "ATT_es_bias", "ATT_es_variance",
+              "ATT_sel_bias", "ATT_sel_variance",
               "CATT_avg_abs_bias", "CATT_avg_variance", "CATT_rmse")
 summary_df[, (num_cols) := lapply(.SD, round, 4), .SDcols = num_cols]
 
