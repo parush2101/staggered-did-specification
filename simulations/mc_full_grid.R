@@ -140,7 +140,7 @@ within_transform <- function(panel) {
 estimate_twfe <- function(panel) {
   fit     <- feols(y ~ D | unit + time, data = panel)
   tau_hat <- as.numeric(coef(fit)["D"])
-  list(catt = rep(tau_hat, K), att = tau_hat)
+  list(catt = rep(tau_hat, K), att = tau_hat, n_partitions = 1L)
 }
 
 # ---------- Estimator: Fully flexible (used by L0 and DP) ----------
@@ -152,7 +152,8 @@ estimate_flexible <- function(panel_dm) {
   beta    <- as.numeric(XtX_inv %*% crossprod(X, y))
   resid   <- y - X %*% beta
   rss     <- sum(resid^2)
-  list(catt = beta, att = mean(beta), rss = rss, XtX_inv = XtX_inv, X = X, y = y)
+  list(catt = beta, att = mean(beta), rss = rss, XtX_inv = XtX_inv, X = X, y = y,
+       n_partitions = K)
 }
 
 # ---------- Estimator: Gardner (2022) two-stage ----------
@@ -168,7 +169,8 @@ estimate_gardner <- function(panel) {
                    by = c("cohort", "time"), all.x = TRUE)
   setorder(cells, cell_id)
 
-  list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE))
+  list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE),
+       n_partitions = sum(!is.na(cells$catt_est)))
 }
 
 # ---------- Estimator: L0 greedy (multiple L values) ----------
@@ -247,7 +249,8 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
   }
 
   z <- seq_len(K)                                        # singletons
-  theta_draws <- matrix(NA_real_, nrow = N_GIBBS, ncol = K)
+  theta_draws       <- matrix(NA_real_, nrow = N_GIBBS, ncol = K)
+  n_clusters_trace  <- integer(N_GIBBS)
 
   for (iter in seq_len(N_GIBBS)) {
 
@@ -274,6 +277,7 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
     }
 
     m  <- max(z)
+    n_clusters_trace[iter] <- m
     Xg <- matrix(0, nrow = NT, ncol = m)
     for (l in seq_len(m)) Xg[, l] <- rowSums(X[, z == l, drop = FALSE])
     Sigma_star <- solve(crossprod(Xg) / sigma2_hat + diag(m) / SIGMA0_SQ)
@@ -286,7 +290,8 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
   }
 
   catt_mean <- colMeans(theta_draws)
-  list(catt = catt_mean, att = mean(catt_mean))
+  list(catt = catt_mean, att = mean(catt_mean),
+       n_partitions = mean(n_clusters_trace))
 }
 
 # ---------- Main MC loop ----------
@@ -310,6 +315,7 @@ for (s in seq_len(nrow(scenario_grid))) {
   truth      <- make_true_catts(structure, gap)
   true_catts <- truth$catts
   true_att   <- mean(true_catts)
+  true_n_partitions <- length(unique(truth$group_id))
   n_per_cell <- rep(cohort_size, K)
 
   cat(sprintf("Scenario %d/%d: N_per_cohort=%d, structure=%s, gap=%s\n",
@@ -336,23 +342,28 @@ for (s in seq_len(nrow(scenario_grid))) {
 
     rep_row <- data.table()
     rep_row <- rbind(rep_row, data.table(
-      method = "TWFE", catt = list(twfe_out$catt), att = twfe_out$att))
+      method = "TWFE", catt = list(twfe_out$catt), att = twfe_out$att,
+      n_partitions = twfe_out$n_partitions))
     rep_row <- rbind(rep_row, data.table(
-      method = "Flexible", catt = list(flex$catt), att = flex$att))
+      method = "Flexible", catt = list(flex$catt), att = flex$att,
+      n_partitions = flex$n_partitions))
     rep_row <- rbind(rep_row, data.table(
-      method = "Gardner", catt = list(gardner_out$catt), att = gardner_out$att))
+      method = "Gardner", catt = list(gardner_out$catt), att = gardner_out$att,
+      n_partitions = gardner_out$n_partitions))
     for (a_idx in seq_along(ALPHA_DP_GRID)) {
       a_val <- ALPHA_DP_GRID[a_idx]
       rep_row <- rbind(rep_row, data.table(
         method = sprintf("DP Bayes (alpha=%g)", a_val),
         catt   = list(dp_out_list[[a_idx]]$catt),
-        att    = dp_out_list[[a_idx]]$att))
+        att    = dp_out_list[[a_idx]]$att,
+        n_partitions = dp_out_list[[a_idx]]$n_partitions))
     }
     for (idx in seq_along(L_GRID)) {
       rep_row <- rbind(rep_row, data.table(
         method = sprintf("L0 (L=%.4g)", L_GRID[idx]),
         catt   = list(l0_out[[idx]]$catt),
-        att    = l0_out[[idx]]$att))
+        att    = l0_out[[idx]]$att,
+        n_partitions = l0_out[[idx]]$n_groups))
     }
 
     rep_row[, replication := rep]
@@ -364,10 +375,11 @@ for (s in seq_len(nrow(scenario_grid))) {
   }
 
   results_all[[row_counter]] <- list(
-    scenario   = scenario_grid[s, ],
-    true_catts = true_catts,
-    true_att   = true_att,
-    raw        = rbindlist(rep_storage)
+    scenario          = scenario_grid[s, ],
+    true_catts        = true_catts,
+    true_att          = true_att,
+    true_n_partitions = true_n_partitions,
+    raw               = rbindlist(rep_storage)
   )
   row_counter <- row_counter + 1L
 }
@@ -381,6 +393,7 @@ for (item in results_all) {
   scen       <- item$scenario
   true_catts <- item$true_catts
   true_att   <- item$true_att
+  true_m     <- item$true_n_partitions
   raw        <- item$raw
 
   for (mth in unique(raw$method)) {
@@ -398,17 +411,20 @@ for (item in results_all) {
     avg_abs_bias_catt <- mean(abs(catt_bias), na.rm = TRUE)
     avg_var_catt      <- mean(catt_var, na.rm = TRUE)
     rmse_catt         <- sqrt(mean(catt_bias^2 + catt_var, na.rm = TRUE))
+    avg_n_partitions  <- mean(sub$n_partitions, na.rm = TRUE)
 
     summary_rows[[length(summary_rows) + 1]] <- data.table(
-      cohort_size       = scen$cohort_size,
-      structure         = scen$structure,
-      gap               = scen$gap,
-      method            = mth,
-      ATT_bias          = att_bias,
-      ATT_variance      = att_var,
-      CATT_avg_abs_bias = avg_abs_bias_catt,
-      CATT_avg_variance = avg_var_catt,
-      CATT_rmse         = rmse_catt
+      cohort_size        = scen$cohort_size,
+      structure          = scen$structure,
+      gap                = scen$gap,
+      true_partitions    = true_m,
+      method             = mth,
+      avg_n_partitions   = avg_n_partitions,
+      ATT_bias           = att_bias,
+      ATT_variance       = att_var,
+      CATT_avg_abs_bias  = avg_abs_bias_catt,
+      CATT_avg_variance  = avg_var_catt,
+      CATT_rmse          = rmse_catt
     )
   }
 }
@@ -421,7 +437,7 @@ method_levels <- c("TWFE", "Gardner", "Flexible",
 summary_df[, method := factor(method, levels = method_levels)]
 setorder(summary_df, cohort_size, structure, gap, method)
 
-num_cols <- c("ATT_bias", "ATT_variance",
+num_cols <- c("avg_n_partitions", "ATT_bias", "ATT_variance",
               "CATT_avg_abs_bias", "CATT_avg_variance", "CATT_rmse")
 summary_df[, (num_cols) := lapply(.SD, round, 4), .SDcols = num_cols]
 
