@@ -4,7 +4,8 @@
 # Design grid:
 #   - T = 10
 #   - 4 cohorts: never-treated + treated at t = 3, 5, 7
-#   - Cohort sizes: N_per_cohort in {10, 50}
+#   - Cohort sizes: 4 specs - uniform_small (all 10), uniform_large (all 50),
+#                              unequal_small (5/10/13/15), unequal_large (40/47/50/55)
 #   - CATT structures: homogeneous, 6 partitions (mixed-gap), fully heterogeneous
 #   - 100 Monte Carlo replications per scenario
 #
@@ -27,9 +28,19 @@ library(data.table)
 N_MC          <- 100
 T_PERIODS     <- 10
 TREATED_GS    <- c(3, 5, 7)
-COHORT_SIZES  <- c(10, 50)
 SIGMA_EPS     <- 1.0
 STRUCTURES    <- c("homog", "six_partition", "full_het")
+
+# Cohort-size specifications. Each entry is a named vector of length 4 giving
+# the number of units assigned to (never-treated, cohort 3, cohort 5, cohort 7).
+# uniform_*  -> all four cohorts the same size;
+# unequal_*  -> heterogeneous sizes across cohorts.
+COHORT_SIZE_SPECS <- list(
+  uniform_small = c("0" = 10, "3" = 10, "5" = 10, "7" = 10),
+  uniform_large = c("0" = 50, "3" = 50, "5" = 50, "7" = 50),
+  unequal_small = c("0" =  5, "3" = 10, "5" = 13, "7" = 15),
+  unequal_large = c("0" = 40, "3" = 47, "5" = 50, "7" = 55)
+)
 
 # DP Bayes
 N_GIBBS       <- 100
@@ -68,16 +79,20 @@ K          <- nrow(CATT_CELLS)   # 8 + 6 + 4 = 18
 # Cohort sizes are uniform within each scenario in this simulation, so
 # P(G=g | G <= t) reduces to 1 / #{treated cohorts with g <= t}.
 
-aggregate_calendar_time <- function(catt_vec) {
+aggregate_calendar_time <- function(catt_vec, cohort_sizes = NULL) {
+  if (is.null(cohort_sizes)) cohort_sizes <- rep(1, length(TREATED_GS))
+  treated_n <- setNames(cohort_sizes, as.character(TREATED_GS))
   theta_c <- numeric(T_PERIODS)
   for (t in seq_len(T_PERIODS)) {
     g_treated <- TREATED_GS[TREATED_GS <= t]
     if (length(g_treated) == 0L) { theta_c[t] <- 0; next }
+    w <- treated_n[as.character(g_treated)]
+    w <- w / sum(w)
     att_gt <- vapply(g_treated, function(g) {
       idx <- which(CATT_CELLS$cohort == g & CATT_CELLS$time == t)
       if (length(idx) == 0L) NA_real_ else catt_vec[idx]
     }, numeric(1))
-    theta_c[t] <- mean(att_gt, na.rm = TRUE)
+    theta_c[t] <- sum(w * att_gt, na.rm = TRUE)
   }
   sum(theta_c[2:T_PERIODS], na.rm = TRUE) / (T_PERIODS - 1)
 }
@@ -87,17 +102,21 @@ aggregate_calendar_time <- function(catt_vec) {
 #   theta^O_es  = (1 / (T-1)) sum_{e=0}^{T-2} theta_es(e)
 # Uniform cohort sizes => P(G=g | G+e <= T) = 1 / #{eligible cohorts at e}.
 
-aggregate_event_time <- function(catt_vec) {
+aggregate_event_time <- function(catt_vec, cohort_sizes = NULL) {
+  if (is.null(cohort_sizes)) cohort_sizes <- rep(1, length(TREATED_GS))
+  treated_n <- setNames(cohort_sizes, as.character(TREATED_GS))
   theta_es <- numeric(T_PERIODS - 1)        # event times e = 0,...,T-2
   for (e_idx in seq_along(theta_es)) {
     e <- e_idx - 1L
     g_eligible <- TREATED_GS[TREATED_GS + e <= T_PERIODS]
     if (length(g_eligible) == 0L) { theta_es[e_idx] <- 0; next }
+    w <- treated_n[as.character(g_eligible)]
+    w <- w / sum(w)
     att_ge <- vapply(g_eligible, function(g) {
       idx <- which(CATT_CELLS$cohort == g & CATT_CELLS$time == g + e)
       if (length(idx) == 0L) NA_real_ else catt_vec[idx]
     }, numeric(1))
-    theta_es[e_idx] <- mean(att_ge, na.rm = TRUE)
+    theta_es[e_idx] <- sum(w * att_ge, na.rm = TRUE)
   }
   sum(theta_es, na.rm = TRUE) / (T_PERIODS - 1)
 }
@@ -107,12 +126,14 @@ aggregate_event_time <- function(catt_vec) {
 #   theta^O_sel  = sum_g theta_sel(g) P(G=g | G <= T)
 # Uniform cohort sizes => weights are uniform across treated cohorts.
 
-aggregate_selection <- function(catt_vec) {
+aggregate_selection <- function(catt_vec, cohort_sizes = NULL) {
+  if (is.null(cohort_sizes)) cohort_sizes <- rep(1, length(TREATED_GS))
   theta_sel <- vapply(TREATED_GS, function(g) {
     cells_g <- which(CATT_CELLS$cohort == g)
     mean(catt_vec[cells_g], na.rm = TRUE)
   }, numeric(1))
-  mean(theta_sel, na.rm = TRUE)
+  w <- cohort_sizes / sum(cohort_sizes)
+  sum(w * theta_sel, na.rm = TRUE)
 }
 
 # ---------- True CATT vector by scenario ----------
@@ -139,14 +160,17 @@ make_true_catts <- function(structure) {
 
 # ---------- DGP ----------
 
-generate_panel <- function(N_per_cohort, true_catts, seed) {
+generate_panel <- function(cohort_sizes_vec, true_catts, seed) {
+  # cohort_sizes_vec: named numeric of length 4 with names matching the cohort
+  # indicators used elsewhere, i.e. "0", "3", "5", "7".
   set.seed(seed)
 
   cohorts_all <- c(0, TREATED_GS)
-  N_total     <- N_per_cohort * length(cohorts_all)
+  sizes_in_order <- cohort_sizes_vec[as.character(cohorts_all)]
+  N_total <- sum(sizes_in_order)
 
   unit_ids    <- seq_len(N_total)
-  unit_cohort <- rep(cohorts_all, each = N_per_cohort)
+  unit_cohort <- rep(cohorts_all, times = sizes_in_order)
   alpha_i     <- rnorm(N_total, mean = 0, sd = 1)
 
   panel <- CJ(unit = unit_ids, time = seq_len(T_PERIODS))
@@ -353,7 +377,7 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
 # ---------- Main MC loop ----------
 
 scenario_grid <- expand.grid(
-  cohort_size = COHORT_SIZES,
+  cohort_spec = names(COHORT_SIZE_SPECS),
   structure   = STRUCTURES,
   stringsAsFactors = FALSE
 )
@@ -363,25 +387,28 @@ row_counter <- 1L
 
 for (s in seq_len(nrow(scenario_grid))) {
 
-  cohort_size <- scenario_grid$cohort_size[s]
+  cohort_spec <- scenario_grid$cohort_spec[s]
   structure   <- scenario_grid$structure[s]
+  sizes_vec   <- COHORT_SIZE_SPECS[[cohort_spec]]              # length 4: never + 3 treated
+  treated_n   <- sizes_vec[as.character(TREATED_GS)]            # length 3: treated only
 
   truth        <- make_true_catts(structure)
   true_catts   <- truth$catts
-  true_att_c   <- aggregate_calendar_time(true_catts)
-  true_att_es  <- aggregate_event_time(true_catts)
-  true_att_sel <- aggregate_selection(true_catts)
+  true_att_c   <- aggregate_calendar_time(true_catts, treated_n)
+  true_att_es  <- aggregate_event_time(true_catts,    treated_n)
+  true_att_sel <- aggregate_selection(true_catts,     treated_n)
   true_n_partitions <- length(unique(truth$group_id))
-  n_per_cell <- rep(cohort_size, K)
+  n_per_cell <- vapply(seq_len(K), function(k)
+    treated_n[as.character(CATT_CELLS$cohort[k])], numeric(1))
 
-  cat(sprintf("Scenario %d/%d: N_per_cohort=%d, structure=%s\n",
-              s, nrow(scenario_grid), cohort_size, structure))
+  cat(sprintf("Scenario %d/%d: cohort_spec=%s, structure=%s\n",
+              s, nrow(scenario_grid), cohort_spec, structure))
 
   rep_storage <- list()
 
   for (rep in seq_len(N_MC)) {
 
-    panel    <- generate_panel(cohort_size, true_catts, MC_SEEDS[rep])
+    panel    <- generate_panel(sizes_vec, true_catts, MC_SEEDS[rep])
     panel_dm <- within_transform(panel)
 
     flex     <- estimate_flexible(panel_dm)
@@ -421,7 +448,7 @@ for (s in seq_len(nrow(scenario_grid))) {
     }
 
     rep_row[, replication := rep]
-    rep_row[, cohort_size := cohort_size]
+    rep_row[, cohort_spec := cohort_spec]
     rep_row[, structure   := structure]
 
     rep_storage[[rep]] <- rep_row
@@ -429,6 +456,8 @@ for (s in seq_len(nrow(scenario_grid))) {
 
   results_all[[row_counter]] <- list(
     scenario          = scenario_grid[s, ],
+    cohort_spec       = cohort_spec,
+    treated_n         = treated_n,
     true_catts        = true_catts,
     true_att_c        = true_att_c,
     true_att_es       = true_att_es,
@@ -446,6 +475,7 @@ summary_rows <- list()
 for (item in results_all) {
 
   scen         <- item$scenario
+  treated_n    <- item$treated_n
   true_catts   <- item$true_catts
   true_att_c   <- item$true_att_c
   true_att_es  <- item$true_att_es
@@ -456,10 +486,14 @@ for (item in results_all) {
   for (mth in unique(raw$method)) {
     sub <- raw[method == mth]
 
-    # Recompute the three ATTs from each replication's CATT vector
-    att_c_vec   <- vapply(sub$catt, aggregate_calendar_time, numeric(1))
-    att_es_vec  <- vapply(sub$catt, aggregate_event_time,    numeric(1))
-    att_sel_vec <- vapply(sub$catt, aggregate_selection,     numeric(1))
+    # Recompute the three ATTs from each replication's CATT vector,
+    # using the cohort sizes that match the scenario.
+    att_c_vec   <- vapply(sub$catt, aggregate_calendar_time, numeric(1),
+                          cohort_sizes = treated_n)
+    att_es_vec  <- vapply(sub$catt, aggregate_event_time,    numeric(1),
+                          cohort_sizes = treated_n)
+    att_sel_vec <- vapply(sub$catt, aggregate_selection,     numeric(1),
+                          cohort_sizes = treated_n)
 
     att_c_bias    <- mean(att_c_vec,   na.rm = TRUE) - true_att_c
     att_c_var     <- var(att_c_vec,    na.rm = TRUE)
@@ -479,7 +513,7 @@ for (item in results_all) {
     avg_n_partitions  <- mean(sub$n_partitions, na.rm = TRUE)
 
     summary_rows[[length(summary_rows) + 1]] <- data.table(
-      cohort_size        = scen$cohort_size,
+      cohort_spec        = scen$cohort_spec,
       structure          = scen$structure,
       true_partitions    = true_m,
       method             = mth,
@@ -503,7 +537,8 @@ method_levels <- c("TWFE", "Gardner", "Flexible",
                    sprintf("DP Bayes (alpha=%g)", ALPHA_DP_GRID),
                    sprintf("L0 (L=%.4g)", L_GRID))
 summary_df[, method := factor(method, levels = method_levels)]
-setorder(summary_df, cohort_size, structure, method)
+summary_df[, cohort_spec := factor(cohort_spec, levels = names(COHORT_SIZE_SPECS))]
+setorder(summary_df, cohort_spec, structure, method)
 
 num_cols <- c("avg_n_partitions",
               "ATT_c_bias", "ATT_c_variance",
