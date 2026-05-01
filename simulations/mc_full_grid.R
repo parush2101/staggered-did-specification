@@ -5,8 +5,7 @@
 #   - T = 10
 #   - 4 cohorts: never-treated + treated at t = 3, 5, 7
 #   - Cohort sizes: N_per_cohort in {10, 50}
-#   - CATT structures: homogeneous, 6 partitions, fully heterogeneous
-#   - Effect spread (gap): small, big
+#   - CATT structures: homogeneous, 6 partitions (mixed-gap), fully heterogeneous
 #   - 100 Monte Carlo replications per scenario
 #
 # Estimators:
@@ -30,9 +29,7 @@ T_PERIODS     <- 10
 TREATED_GS    <- c(3, 5, 7)
 COHORT_SIZES  <- c(10, 50)
 SIGMA_EPS     <- 1.0
-GAP_VALUES    <- c(small = 1.0, big = 4.0)
 STRUCTURES    <- c("homog", "six_partition", "full_het")
-GAPS          <- c("small", "big")
 
 # DP Bayes
 N_GIBBS       <- 100
@@ -62,19 +59,20 @@ K          <- nrow(CATT_CELLS)   # 8 + 6 + 4 = 18
 
 # ---------- True CATT vector by scenario ----------
 
-make_true_catts <- function(structure, gap_label) {
-  base   <- 2
-  spread <- GAP_VALUES[[gap_label]]
-
+make_true_catts <- function(structure) {
   if (structure == "homog") {
-    catts    <- rep(base, K)
+    catts    <- rep(2, K)
     group_id <- rep(1L, K)
   } else if (structure == "six_partition") {
-    group_vals <- seq(base - spread / 2, base + spread / 2, length.out = 6)
+    # Mixed-gap design:
+    #   trio (close):       1.0, 1.2, 1.4
+    #   duo  (medium-far):  4.0, 4.2
+    #   singleton (far):    8.0
+    group_vals <- c(1.0, 1.2, 1.4, 4.0, 4.2, 8.0)
     group_id   <- rep(1:6, each = 3)        # K = 18 = 6 * 3
     catts      <- group_vals[group_id]
   } else if (structure == "full_het") {
-    catts    <- seq(base - spread / 2, base + spread / 2, length.out = K)
+    catts    <- seq(1, 8, length.out = K)
     group_id <- seq_len(K)
   } else stop("Unknown structure: ", structure)
 
@@ -299,7 +297,6 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
 scenario_grid <- expand.grid(
   cohort_size = COHORT_SIZES,
   structure   = STRUCTURES,
-  gap         = GAPS,
   stringsAsFactors = FALSE
 )
 
@@ -310,16 +307,15 @@ for (s in seq_len(nrow(scenario_grid))) {
 
   cohort_size <- scenario_grid$cohort_size[s]
   structure   <- scenario_grid$structure[s]
-  gap         <- scenario_grid$gap[s]
 
-  truth      <- make_true_catts(structure, gap)
+  truth      <- make_true_catts(structure)
   true_catts <- truth$catts
   true_att   <- mean(true_catts)
   true_n_partitions <- length(unique(truth$group_id))
   n_per_cell <- rep(cohort_size, K)
 
-  cat(sprintf("Scenario %d/%d: N_per_cohort=%d, structure=%s, gap=%s\n",
-              s, nrow(scenario_grid), cohort_size, structure, gap))
+  cat(sprintf("Scenario %d/%d: N_per_cohort=%d, structure=%s\n",
+              s, nrow(scenario_grid), cohort_size, structure))
 
   rep_storage <- list()
 
@@ -369,7 +365,6 @@ for (s in seq_len(nrow(scenario_grid))) {
     rep_row[, replication := rep]
     rep_row[, cohort_size := cohort_size]
     rep_row[, structure   := structure]
-    rep_row[, gap         := gap]
 
     rep_storage[[rep]] <- rep_row
   }
@@ -416,7 +411,6 @@ for (item in results_all) {
     summary_rows[[length(summary_rows) + 1]] <- data.table(
       cohort_size        = scen$cohort_size,
       structure          = scen$structure,
-      gap                = scen$gap,
       true_partitions    = true_m,
       method             = mth,
       avg_n_partitions   = avg_n_partitions,
@@ -435,7 +429,7 @@ method_levels <- c("TWFE", "Gardner", "Flexible",
                    sprintf("DP Bayes (alpha=%g)", ALPHA_DP_GRID),
                    sprintf("L0 (L=%.4g)", L_GRID))
 summary_df[, method := factor(method, levels = method_levels)]
-setorder(summary_df, cohort_size, structure, gap, method)
+setorder(summary_df, cohort_size, structure, method)
 
 num_cols <- c("avg_n_partitions", "ATT_bias", "ATT_variance",
               "CATT_avg_abs_bias", "CATT_avg_variance", "CATT_rmse")
