@@ -57,6 +57,31 @@ build_catt_cells <- function() {
 CATT_CELLS <- build_catt_cells()
 K          <- nrow(CATT_CELLS)   # 8 + 6 + 4 = 18
 
+# ---------- Calendar-time ATT aggregation (Callaway & Sant'Anna 2021) ----------
+#
+# Replaces the simple equal-weight mean with the heterogeneity-preserving
+# calendar-time aggregator theta^O_c, eqs. (3.8) and (3.12) of the paper:
+#
+#   theta_c(t)  = sum_g 1{t >= g} P(G=g | G <= t) * ATT(g, t)
+#   theta^O_c   = (1 / (T-1)) * sum_{t=2}^{T} theta_c(t)
+#
+# Cohort sizes are uniform within each scenario in this simulation, so
+# P(G=g | G <= t) reduces to 1 / #{treated cohorts with g <= t}.
+
+aggregate_calendar_time <- function(catt_vec) {
+  theta_c <- numeric(T_PERIODS)
+  for (t in seq_len(T_PERIODS)) {
+    g_treated <- TREATED_GS[TREATED_GS <= t]
+    if (length(g_treated) == 0L) { theta_c[t] <- 0; next }
+    att_gt <- vapply(g_treated, function(g) {
+      idx <- which(CATT_CELLS$cohort == g & CATT_CELLS$time == t)
+      if (length(idx) == 0L) NA_real_ else catt_vec[idx]
+    }, numeric(1))
+    theta_c[t] <- mean(att_gt, na.rm = TRUE)
+  }
+  sum(theta_c[2:T_PERIODS], na.rm = TRUE) / (T_PERIODS - 1)
+}
+
 # ---------- True CATT vector by scenario ----------
 
 make_true_catts <- function(structure) {
@@ -138,7 +163,8 @@ within_transform <- function(panel) {
 estimate_twfe <- function(panel) {
   fit     <- feols(y ~ D | unit + time, data = panel)
   tau_hat <- as.numeric(coef(fit)["D"])
-  list(catt = rep(tau_hat, K), att = tau_hat, n_partitions = 1L)
+  catt    <- rep(tau_hat, K)
+  list(catt = catt, att = aggregate_calendar_time(catt), n_partitions = 1L)
 }
 
 # ---------- Estimator: Fully flexible (used by L0 and DP) ----------
@@ -150,7 +176,8 @@ estimate_flexible <- function(panel_dm) {
   beta    <- as.numeric(XtX_inv %*% crossprod(X, y))
   resid   <- y - X %*% beta
   rss     <- sum(resid^2)
-  list(catt = beta, att = mean(beta), rss = rss, XtX_inv = XtX_inv, X = X, y = y,
+  list(catt = beta, att = aggregate_calendar_time(beta),
+       rss = rss, XtX_inv = XtX_inv, X = X, y = y,
        n_partitions = K)
 }
 
@@ -167,7 +194,8 @@ estimate_gardner <- function(panel) {
                    by = c("cohort", "time"), all.x = TRUE)
   setorder(cells, cell_id)
 
-  list(catt = cells$catt_est, att = mean(cells$catt_est, na.rm = TRUE),
+  list(catt = cells$catt_est,
+       att  = aggregate_calendar_time(cells$catt_est),
        n_partitions = sum(!is.na(cells$catt_est)))
 }
 
@@ -221,7 +249,7 @@ estimate_l0_grid <- function(flex_catts, n_per_cell, L_values) {
     results[[idx]] <- list(
       L        = L,
       catt     = catt_est,
-      att      = mean(catt_est),
+      att      = aggregate_calendar_time(catt_est),
       n_groups = length(groups)
     )
   }
@@ -288,7 +316,8 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
   }
 
   catt_mean <- colMeans(theta_draws)
-  list(catt = catt_mean, att = mean(catt_mean),
+  list(catt = catt_mean,
+       att  = aggregate_calendar_time(catt_mean),
        n_partitions = mean(n_clusters_trace))
 }
 
@@ -310,7 +339,7 @@ for (s in seq_len(nrow(scenario_grid))) {
 
   truth      <- make_true_catts(structure)
   true_catts <- truth$catts
-  true_att   <- mean(true_catts)
+  true_att   <- aggregate_calendar_time(true_catts)
   true_n_partitions <- length(unique(truth$group_id))
   n_per_cell <- rep(cohort_size, K)
 
