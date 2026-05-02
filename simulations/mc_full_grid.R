@@ -42,9 +42,10 @@ COHORT_SIZE_SPECS <- list(
 )
 
 # DP Bayes
-N_GIBBS       <- 100
-ALPHA_DP_GRID <- c(1.0, 20.0)   # concentration: 1 favours few clusters, 20 favours many
-SIGMA0_SQ     <- 100.0          # diffuse base measure
+N_GIBBS       <- 500
+N_BURNIN      <- 100              # first 20% of iterations discarded as burn-in
+ALPHA_DP_GRID <- c(1.0, 20.0)     # concentration: 1 favours few clusters, 20 favours many
+SIGMA0_SQ     <- 100.0            # diffuse base measure
 MU0           <- 0.0
 
 # L0 penalty grid: 10 log-spaced values spanning extreme cases
@@ -368,9 +369,10 @@ estimate_dp_bayes <- function(panel_dm, sigma2_hat, alpha) {
     theta_draws[iter, ] <- phi[z]
   }
 
-  catt_mean <- colMeans(theta_draws)
+  keep <- (N_BURNIN + 1L):N_GIBBS
+  catt_mean <- colMeans(theta_draws[keep, , drop = FALSE])
   list(catt = catt_mean,
-       n_partitions = mean(n_clusters_trace))
+       n_partitions = mean(n_clusters_trace[keep]))
 }
 
 # ---------- Main MC loop ----------
