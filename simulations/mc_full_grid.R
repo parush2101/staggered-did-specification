@@ -4,8 +4,9 @@
 # Design grid:
 #   - T = 10
 #   - 4 cohorts: never-treated + treated at t = 3, 5, 7
-#   - Cohort sizes: 4 specs - uniform_small (all 10), uniform_large (all 50),
-#                              unequal_small (5/10/13/15), unequal_large (40/47/50/55)
+#   - Cohort sizes: small only - uniform_small (all 10) and unequal_small (5/10/13/15).
+#                   Homogeneous truth is run with uniform_small only (cohort imbalance
+#                   carries no extra information when CATTs are constant).
 #   - CATT structures: homogeneous, 6 partitions (mixed-gap), fully heterogeneous
 #   - 100 Monte Carlo replications per scenario
 #
@@ -37,9 +38,7 @@ STRUCTURES    <- c("homog", "six_partition", "full_het")
 # unequal_*  -> heterogeneous sizes across cohorts.
 COHORT_SIZE_SPECS <- list(
   uniform_small = c("0" = 10, "3" = 10, "5" = 10, "7" = 10),
-  uniform_large = c("0" = 50, "3" = 50, "5" = 50, "7" = 50),
-  unequal_small = c("0" =  5, "3" = 10, "5" = 13, "7" = 15),
-  unequal_large = c("0" = 40, "3" = 47, "5" = 50, "7" = 55)
+  unequal_small = c("0" =  5, "3" = 10, "5" = 13, "7" = 15)
 )
 
 # DP Bayes
@@ -381,6 +380,11 @@ scenario_grid <- expand.grid(
   structure   = STRUCTURES,
   stringsAsFactors = FALSE
 )
+# Homogeneous truth is invariant to cohort sizes, so we only run it for
+# the uniform spec and drop the redundant unequal-cohort homogeneous row.
+scenario_grid <- subset(scenario_grid,
+                        !(structure == "homog" & cohort_spec != "uniform_small"))
+rownames(scenario_grid) <- NULL
 
 results_all <- list()
 row_counter <- 1L
