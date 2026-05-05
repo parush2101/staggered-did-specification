@@ -7,7 +7,10 @@
 #   - Cohort sizes: uniform_small (all 10) only. Unequal-cohort scenarios
 #                   from mc_full_grid.R are dropped here; this script focuses
 #                   on partition recovery under balanced cohorts.
-#   - CATT structures: homogeneous, 6 partitions (mixed-gap), fully heterogeneous
+#   - CATT structures: parameterised m-partition sweep with
+#                       m in {1, 2, 4, 6, 8, 10, 12, 14, 16, 18} (10 values).
+#                       Each m splits K = 18 cells into m groups of
+#                       near-equal size with tau values evenly spaced over [1, 8].
 #   - 100 Monte Carlo replications per scenario
 #
 # Estimators:
@@ -30,7 +33,12 @@ N_MC          <- 100
 T_PERIODS     <- 10
 TREATED_GS    <- c(3, 5, 7)
 SIGMA_EPS     <- 1.0
-STRUCTURES    <- c("homog", "six_partition", "full_het")
+
+# Parameterised partition sweep: K = 18 CATT cells split into m groups for
+# m in {1, 2, 4, ..., 18}. Each scenario is labelled "m_<value>"; the
+# homogeneous case is m_1 and the fully heterogeneous case is m_18.
+M_VALUES      <- c(1, 2, 4, 6, 8, 10, 12, 14, 16, 18)
+STRUCTURES    <- paste0("m_", M_VALUES)
 
 # Cohort-size specifications. Each entry is a named vector of length 4 giving
 # the number of units assigned to (never-treated, cohort 3, cohort 5, cohort 7).
@@ -136,21 +144,27 @@ aggregate_selection <- function(catt_vec, cohort_sizes = NULL) {
 # ---------- True CATT vector by scenario ----------
 
 make_true_catts <- function(structure) {
-  if (structure == "homog") {
-    catts    <- rep(2, K)
-    group_id <- rep(1L, K)
-  } else if (structure == "six_partition") {
-    # Mixed-gap design:
-    #   trio (close):       1.0, 1.2, 1.4
-    #   duo  (medium-far):  4.0, 4.2
-    #   singleton (far):    8.0
-    group_vals <- c(1.0, 1.2, 1.4, 4.0, 4.2, 8.0)
-    group_id   <- rep(1:6, each = 3)        # K = 18 = 6 * 3
+  # Parameterised m-partition truth. Structure label is "m_<m>" with
+  # m in M_VALUES. K = 18 cells are split into m groups of as-equal-as-
+  # possible size (the first K mod m groups carry one extra cell), and
+  # the m group means are evenly spaced over [1, 8]. The homogeneous
+  # baseline (m = 1) keeps tau = 2 to match the previous design.
+
+  m <- as.integer(sub("^m_", "", structure))
+  if (is.na(m) || m < 1L || m > K)
+    stop("Unknown structure: ", structure)
+
+  group_sizes <- rep(K %/% m, m)
+  rem         <- K %% m
+  if (rem > 0L) group_sizes[seq_len(rem)] <- group_sizes[seq_len(rem)] + 1L
+  group_id    <- rep(seq_len(m), times = group_sizes)
+
+  if (m == 1L) {
+    catts <- rep(2, K)
+  } else {
+    group_vals <- seq(1, 8, length.out = m)
     catts      <- group_vals[group_id]
-  } else if (structure == "full_het") {
-    catts    <- seq(1, 8, length.out = K)
-    group_id <- seq_len(K)
-  } else stop("Unknown structure: ", structure)
+  }
 
   list(catts = catts, group_id = group_id)
 }
