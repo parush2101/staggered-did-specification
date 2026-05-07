@@ -267,16 +267,17 @@ estimate_gardner <- function(panel) {
 
 # ---------- Estimator: L0 greedy (multiple L values) ----------
 
-estimate_l0_grid <- function(flex_catts, n_per_cell, L_values) {
+estimate_l0_grid <- function(flex_catts, n_per_cell, L_values, panel) {
   results <- vector("list", length(L_values))
   names(results) <- paste0("L_", formatC(L_values, format = "g", digits = 4))
 
   for (idx in seq_along(L_values)) {
-    L      <- L_values[idx]
-    groups <- as.list(seq_len(K))
-    n_grp  <- n_per_cell
+    L       <- L_values[idx]
+    groups  <- as.list(seq_len(K))
+    n_grp   <- n_per_cell
     tau_grp <- flex_catts
 
+    # Step 1: greedy agglomerative merging on flexible CATT estimates
     repeat {
       m         <- length(groups)
       if (m == 1L) break
@@ -309,13 +310,27 @@ estimate_l0_grid <- function(flex_catts, n_per_cell, L_values) {
       n_grp        <- n_grp[-j]
     }
 
+    # Step 2: re-estimate via feols using the partition from Step 1
+    m_final  <- length(groups)
+    panel_l0 <- copy(panel)
+    grp_cols <- paste0("G_", seq_len(m_final))
+    for (g in seq_len(m_final)) {
+      cell_cols <- paste0("D_", groups[[g]])
+      panel_l0[, (grp_cols[g]) := rowSums(.SD), .SDcols = cell_cols]
+    }
+    fml <- as.formula(
+      paste("y ~", paste(grp_cols, collapse = " + "), "| unit + time")
+    )
+    fit       <- feols(fml, data = panel_l0, warn = FALSE, notes = FALSE)
+    grp_coefs <- coef(fit)[grp_cols]
+
     catt_est <- numeric(K)
-    for (g in seq_along(groups)) catt_est[groups[[g]]] <- tau_grp[g]
+    for (g in seq_len(m_final)) catt_est[groups[[g]]] <- grp_coefs[g]
 
     results[[idx]] <- list(
       L        = L,
       catt     = catt_est,
-      n_groups = length(groups)
+      n_groups = m_final
     )
   }
   results
@@ -431,7 +446,7 @@ for (s in seq_len(nrow(scenario_grid))) {
 
     twfe_out    <- estimate_twfe(panel)
     gardner_out <- estimate_gardner(panel)
-    l0_out      <- estimate_l0_grid(flex$catt, n_per_cell, L_GRID)
+    l0_out      <- estimate_l0_grid(flex$catt, n_per_cell, L_GRID, panel)
     dp_out_list <- lapply(ALPHA_DP_GRID, function(a)
       estimate_dp_bayes(panel_dm, sigma2_hat, alpha = a))
     names(dp_out_list) <- sprintf("alpha=%g", ALPHA_DP_GRID)
