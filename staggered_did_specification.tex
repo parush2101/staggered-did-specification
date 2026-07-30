@@ -370,34 +370,6 @@ non-zero whenever some other group differs ($\phi_q \neq \phi_p$) and does not
 vanish as $n \to \infty$. The signals of the other groups bleed into the pooled
 estimate, so $\phi_p$ is estimated as a distorted mixture of all $m$ true effects.
 
-\bigskip
-
-Table~\ref{tab:spec_tradeoff} collects the three estimators for a cell in a group
-$C_p$ under the partial-homogeneity DGP (Eq.~\ref{eq:within}), in the balanced
-case $n_k = n$.
-
-\begin{table}[H]
-  \centering
-  \caption{Bias and Variance under Partial Homogeneity, for a cell $k \in C_p$}
-  \label{tab:spec_tradeoff}
-  \begin{tabular}{l|cc}
-    \toprule
-    Estimator & Bias for $\tau_k = \phi_{p}$ & Variance \\
-    \midrule
-    Flexible  & $0$                              & $\sigma^2 / n$ \\[4pt]
-    PH ($\mathcal{P}$) & $0$               & $\sigma^2 / (|C_p|\,n)$ \\[4pt]
-    Pooled    & $\displaystyle\sum_{q \neq p} W_q(\phi_q - \phi_{p})$ & $\sigma^2 / (K\,n)$ \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\noindent The table shows the core specification issue. Moving from the flexible
-to the PH specification reduces the variance of a cell in group $C_p$ by the
-factor $|C_p|$ at zero bias. Moving further to full pooling gains an additional
-factor, to $\sigma^2/(Kn)$, but introduces a bias that does not vanish with
-sample size. The PH estimator sits strictly between the extremes, close to the
-pooled estimator in precision yet unbiased like the flexible one.
-
 The practical challenge is that $\mathcal{P}$ is unknown. A researcher who uses
 the fully flexible estimator by default leaves $K - m$ degrees of freedom on the
 table and reports unnecessarily wide intervals, while one who collapses to a
@@ -411,7 +383,7 @@ principled answers.\footnote{Partial homogeneity also aids identification under 
 % 4. BAYESIAN APPROACH: DIRICHLET PROCESS MIXTURE
 % =============================================================================
   \section{A Bayesian Model for Partition Selection}\label{sec:bayes}
-  We now specify a probability model for the cohort-time effects that (i) permits any grouping of the $K$ cells into shared-effect clusters, (ii) favors parsimonious groupings without fixing their number in advance, and (iii) delivers not merely point estimates but full uncertainty over the grouping itself. A Dirichlet Process (DP) mixture prior on the cohort-average treatment effects on the treated (CATTs) accomplishes all three. We specify the model in Section~\ref{sec:bayes:model} and estimate it with a collapsed Gibbs sampler that reports posterior means, co-clustering probabilities, and credible intervals which marginalize the unknown partition (Section~\ref{sec:bayes:gibbs}). As a remark, its maximum a posteriori (MAP) partition coincides with an $\ell_0$-penalized estimator (Section~\ref{sec:freq}), a connection to the homogeneity-pursuit literature rather than a separate recommendation.
+  We develop the Dirichlet Process (DP) mixture model for the CATTs, specifying it in Section~\ref{sec:bayes:model}, estimating it with a collapsed Gibbs sampler in Section~\ref{sec:bayes:gibbs}, and recording the $\ell_0$ form of its maximum a posteriori partition in Section~\ref{sec:freq}.
 
   \subsection{Model Specification}\label{sec:bayes:model}
 
@@ -465,7 +437,7 @@ The complete hierarchical model places a conjugate prior on the error variance a
     \phi \mid \mathcal{P} &\;\sim\; \mathcal{N}\!\left(\mu_{0}\mathbf{1}_{m},\,\sigma_{0}^{2} I_{m}\right), \label{eq:bayes:phi}\\
     \sigma^{2} &\;\sim\; \mathrm{Inv\text{-}Gamma}(a_{0}, b_{0}), \label{eq:bayes:sigma}
   \end{align}
-  so that no quantity is fixed by plug-in and the specification is a complete Bayesian model. The inverse-gamma prior is conditionally conjugate, so the collapsed sampler of Section~\ref{sec:bayes:gibbs} is unchanged apart from one additional draw of $\sigma^{2}$ from its inverse-gamma full conditional each sweep. Under the fully conjugate variant that scales the effect prior with the variance, $\phi \mid \mathcal{P}, \sigma^{2} \sim \mathcal{N}(\mu_{0}\mathbf{1}_{m},\, \sigma^{2}\Sigma_{0})$, the pair $(\phi, \sigma^{2})$ integrates out in closed form, the marginal likelihood of a partition $p(\tilde{y}\mid\mathcal{P})$ is a multivariate-$t$, and the MAP partition minimizes a BIC-type penalty on the log residual sum of squares rather than a fixed penalty on the RSS. We take this full model, with $\sigma^{2}$ random, as our primary specification, and it is what the simulations and applications report. Holding $\sigma^{2}$ fixed at a plug-in value (Section~\ref{sec:bayes:sigmafixed}) is an analytically convenient special case that returns the Gaussian model derived next and the exact $\ell_0$ correspondence of Section~\ref{sec:freq}, and it delivers essentially the same answers (Appendix~\ref{app:sigma}).
+  so that no quantity is fixed by plug-in and the specification is a complete Bayesian model. We take this full model, with $\sigma^{2}$ random, as our primary specification throughout, and it is what the simulations and applications report. The inverse-gamma prior is conditionally conjugate, which keeps the collapsed sampler tractable.
 
   Conditioning on $\sigma^{2}$, the prior on $\phi$ is conjugate to the Gaussian likelihood, so the group effects integrate out analytically.
   Standard calculations yield
@@ -491,36 +463,29 @@ The complete hierarchical model places a conjugate prior on the error variance a
   \mu_{0}\mathbf{1}_{m}/\sigma_{0}^{2}\right).
     \label{eq:bayes:phipost}
   \end{equation}
-  In the full model each sweep draws $\sigma^{2}$ from its inverse-gamma full conditional and then evaluates \eqref{eq:bayes:logmarg}--\eqref{eq:bayes:phipost} at that draw. The fixed-$\sigma^{2}$ special case instead plugs in the residual variance from the fully flexible regression \eqref{eq:twfe_flex}, $\hat{\sigma}^{2} = \mathrm{RSS}_{\text{flex}}/(NT - N - T + 1 - K)$. Section~\ref{sec:bayes:sigmafixed} contrasts the two.
+  The collapsed Gibbs sampler (Section~\ref{sec:bayes:gibbs}) draws $\sigma^{2}$ from its inverse-gamma full conditional each sweep and evaluates \eqref{eq:bayes:logmarg}--\eqref{eq:bayes:phipost} at that draw.
 
-  \begin{remark}[On $\sigma^2$ and the design covariance]
+  \begin{remark}[The design covariance]
   \label{rem:sigma}
-  Two implementation points affect the calibration of the credible intervals,
-  and it is worth separating them because only one of them matters in practice.
-  First, whether $\sigma^2$ is drawn from its full conditional \eqref{eq:bayes:sigma},
-  as in our primary specification, or held at a plug-in $\hat\sigma^2$ makes little
-  difference. The variance is pinned down whenever the residual degrees of freedom
-  $NT - N - T + 1 - K$ are large, as they typically are, and in our experiments the
-  two treatments give essentially the same coverage (Appendix~\ref{app:sigma}).
-  Second, and consequentially, the posterior in
-  \eqref{eq:bayes:phipost} must use the exact within-design cross-product
-  $\tilde D^{\prime}\tilde D$. The cohort-time estimates $\hat\tau_{k}$ are
-  jointly $N(\tau, \sigma^2(\tilde D^{\prime}\tilde D)^{-1})$ and are correlated
-  through the shared fixed effects. Treating them as independent therefore
-  understates the posterior variance of linear aggregates such as the overall ATT, in our design, by a factor of about $3.5$, and produces overconfident,
-  undercovering intervals. The model above already uses $\tilde D^{\prime}\tilde D$;
-  we flag the point because the diagonal shortcut is tempting and its effect on
-  coverage is large, whereas the treatment of $\sigma^2$ is not.
+  The posterior in \eqref{eq:bayes:phipost} must use the exact within-design
+  cross-product $\tilde D^{\prime}\tilde D$. The cohort-time estimates
+  $\hat\tau_{k}$ are jointly $N(\tau, \sigma^2(\tilde D^{\prime}\tilde D)^{-1})$
+  and are correlated through the shared fixed effects. Treating them as
+  independent understates the posterior variance of linear aggregates such as the
+  overall ATT, in our design by a factor of about $3.5$, and produces
+  overconfident, undercovering intervals. The model above already uses
+  $\tilde D^{\prime}\tilde D$; we flag the point because the diagonal shortcut is
+  tempting and its effect on coverage is large.
   \end{remark}
 
   \subsection{Fixed and Random $\sigma^{2}$}\label{sec:bayes:sigmafixed}
 
-  Equations \eqref{eq:bayes:cond}--\eqref{eq:bayes:sigma} complete the model, and we take this full specification, with $\sigma^{2}$ random, as primary. Drawing $\sigma^{2}$ from its inverse-gamma full conditional adds one step to the sampler, and integrating $(\phi,\sigma^{2})$ out of a partition's marginal likelihood gives a multivariate-$t$ under which the MAP partition minimizes a BIC-type penalty on the log residual sum of squares,
+  Under the full random-$\sigma^{2}$ specification of Section~\ref{sec:bayes:model}, integrating $(\phi,\sigma^{2})$ out of a partition's marginal likelihood gives a multivariate-$t$ under which the MAP partition minimizes a BIC-type penalty on the log residual sum of squares,
   \begin{equation}
     \mathcal{P}^{\mathrm{MAP}} \;=\; \arg\min_{\mathcal{P}}\; NT\log\!\bigl(\mathrm{RSS}(\mathcal{P})/NT\bigr) \;-\; 2\log\Pr(\mathcal{P}),
     \label{eq:bic}
   \end{equation}
-  so the fit enters on the log scale, $\sigma^{2}$ is profiled out, and the complexity charge grows at the Schwarz $\log(NT)$ rate rather than being a fixed multiple of the RSS. Holding $\sigma^{2}$ fixed at the plug-in $\hat\sigma^{2}$ is a useful special case. With $\sigma^{2}$ constant the model is Gaussian, the group-effect posterior \eqref{eq:bayes:phipost} is Normal, and the sampler draws partitions from the Gaussian marginal likelihood \eqref{eq:bayes:logmarg}. More to the point, it is the case under which the MAP partition is the exact $\ell_0$-penalized estimator of Section~\ref{sec:freq}, with the constant penalty $L = \lambda\sigma^{2}$, the connection to the homogeneity-pursuit literature that we record there. Because the residual degrees of freedom $NT - N - T + 1 - K$ are large, the fixed- and random-$\sigma^{2}$ versions deliver essentially the same coverage and interval length in our experiments (Appendix~\ref{app:sigma}), so the choice is immaterial for the reported results and we use the fixed case only to make the $\ell_0$ link concrete. The homoskedastic assumption itself can be relaxed, and Appendix~\ref{app:hetero} extends the model to a heterogeneous error covariance and augments the sampler with a Gibbs update for group-specific error variances.
+  so the fit enters on the log scale, $\sigma^{2}$ is profiled out, and the complexity charge grows at the Schwarz $\log(NT)$ rate rather than being a fixed multiple of the RSS. Holding $\sigma^{2}$ fixed at the plug-in $\hat\sigma^{2} = \mathrm{RSS}_{\text{flex}}/(NT - N - T + 1 - K)$, the residual variance from the fully flexible regression \eqref{eq:twfe_flex}, is a useful special case. With $\sigma^{2}$ constant the model is Gaussian, the group-effect posterior \eqref{eq:bayes:phipost} is Normal, and the sampler draws partitions from the Gaussian marginal likelihood \eqref{eq:bayes:logmarg}. More to the point, it is the case under which the MAP partition is the exact $\ell_0$-penalized estimator of Section~\ref{sec:freq}, with the constant penalty $L = \lambda\sigma^{2}$, the connection to the homogeneity-pursuit literature that we record there. Because the residual degrees of freedom $NT - N - T + 1 - K$ are large, the fixed- and random-$\sigma^{2}$ versions deliver essentially the same coverage and interval length in our experiments (Appendix~\ref{app:sigma}), so the choice is immaterial for the reported results and we use the fixed case only to make the $\ell_0$ link concrete. The homoskedastic assumption itself can be relaxed, and Appendix~\ref{app:hetero} extends the model to a heterogeneous error covariance and augments the sampler with a Gibbs update for group-specific error variances.
 
   \subsection{Estimation and Inference}\label{sec:bayes:gibbs}
 
@@ -1396,7 +1361,7 @@ The main text draws $\sigma^{2}$ from its inverse-gamma full conditional each sw
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:sigma} reports the result. The two samplers deliver essentially the same coverage and interval length, for the cohort-time effects and for the overall ATT. The reason is the one given in Remark~\ref{rem:sigma}, the residual degrees of freedom $NT - N - T + 1 - K$ are large, so $\sigma^{2}$ is pinned down and the estimation error a prior on it would propagate is negligible. The choice is therefore immaterial for the reported results, and we use the fixed-$\sigma^{2}$ case in the main text only to make the $\ell_0$ connection concrete.
+Table~\ref{tab:sigma} reports the result. The two samplers deliver essentially the same coverage and interval length, for the cohort-time effects and for the overall ATT. The reason is the one given in Section~\ref{sec:bayes:sigmafixed}, the residual degrees of freedom $NT - N - T + 1 - K$ are large, so $\sigma^{2}$ is pinned down and the estimation error a prior on it would propagate is negligible. The choice is therefore immaterial for the reported results, and we use the fixed-$\sigma^{2}$ case in the main text only to make the $\ell_0$ connection concrete.
 
 % =============================================================================
 % REFERENCES
