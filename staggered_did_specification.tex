@@ -439,7 +439,7 @@ The complete hierarchical model places a conjugate prior on the error variance a
   \end{align}
   so that no quantity is fixed by plug-in and the specification is a complete Bayesian model. We take this full model, with $\sigma^{2}$ random, as our primary specification throughout, and it is what the simulations and applications report. The inverse-gamma prior is conditionally conjugate, which keeps the collapsed sampler tractable.
 
-  Conditioning on $\sigma^{2}$, the prior on $\phi$ is conjugate to the Gaussian likelihood, so the group effects integrate out analytically.
+  At any value of $\sigma^{2}$, the value the sampler conditions on at a given sweep, the prior on $\phi$ is conjugate to the Gaussian likelihood, so the group effects integrate out analytically.
   Standard calculations yield
   \begin{equation}
     \tilde{y} \mid \mathcal{P} \;\sim\; \mathcal{N}\!\left(\mu_{0}\,\tilde{D}\,\mathbf{1}_{m},\; \sigma^{2} I_{NT} +
@@ -456,7 +456,7 @@ The complete hierarchical model places a conjugate prior on the error variance a
   \kappa\,\tilde{D}'\tilde{D}\bigr)^{-1}\!\bigl(\tilde{D}'\tilde{Y}\bigr).
     \label{eq:bayes:logmarg}
   \end{equation}
-  The posterior of $\phi$ given $\mathcal{P}$ is $N(\mu^{\ast},\Sigma^{\ast})$ with
+  The posterior of $\phi$ given $\mathcal{P}$ and $\sigma^{2}$ is $N(\mu^{\ast},\Sigma^{\ast})$ with
   \begin{equation}
     \Sigma^{\ast} \;=\; \left(\tilde{D}'\tilde{D}/\sigma^{2} + I_{m}/\sigma_{0}^{2}\right)^{\!-1}, \qquad
   \mu^{\ast} \;=\; \Sigma^{\ast}\!\left(\tilde{D}'\tilde{Y}/\sigma^{2} +
