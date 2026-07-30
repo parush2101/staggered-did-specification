@@ -65,10 +65,10 @@
   Process (DP) mixture prior on the CATTs. The model favors parsimonious groupings
   without fixing their number, and a collapsed Gibbs sampler delivers point
   estimates, credible intervals that marginalize the unknown partition, and
-  co-clustering probabilities for every pair of CATTs. As an aside, with the
-  error variance held fixed the model's maximum a posteriori (MAP) partition
-  reduces to an $\ell_0$-penalized regression, connecting the Bayesian
-  formulation to the homogeneity-pursuit literature.
+  co-clustering probabilities for every pair of CATTs. With the error variance
+  held fixed, the model's maximum a posteriori (MAP) partition reduces to an
+  $\ell_0$-penalized regression, connecting the Bayesian formulation to the
+  homogeneity-pursuit literature.
   In a calibrated simulation, the model cuts the sampling variance of the
   cohort-time effects by 26--52\% relative to the fully flexible estimator, without
   the pooled estimator's bias, provided the distinct effects are separated enough
@@ -524,11 +524,11 @@ The posterior mean of $\tau_{k}$ is
   \end{equation}
   gives the posterior probability that CATTs $j$ and $k$ belong to the same group. The $K \times K$ matrix $\hat{\Pi} = [\hat{\pi}_{jk}]$ is the posterior similarity matrix, summarizing the full uncertainty over the grouping structure; when a single representative partition is desired, it can be obtained from the posterior together with a credible region using the loss-based summaries of \citet{lau2007} and \citet{wade2018}. Aggregated estimands (e.g.\ the overall ATT or event-study coefficients) are computed by applying the linear aggregator of interest to each posterior draw and summarizing across the chain, which delivers uncertainty quantification that incorporates the uncertainty in the partition itself.
 
-  The full posterior is the object we use for inference. Before turning to the evidence, we record an observation that connects the model to the homogeneity-pursuit literature. Its most probable partition, the maximum a posteriori (MAP) estimate, has a penalized-regression form, which we develop next as a remark rather than as a separate, competing estimator.
+  The full posterior is the object we use for inference. Before turning to the evidence, we record an observation that connects the model to the homogeneity-pursuit literature. Its most probable partition, the maximum a posteriori (MAP) estimate, has a penalized-regression form, which we develop next.
 % =============================================================================
 % 4. THE MAP PARTITION: L_0 PENALIZED SUMMARY
 % =============================================================================
-\subsection{A Remark: the MAP Partition as $\ell_0$ Homogeneity Pursuit}\label{sec:freq}
+\subsection{The MAP Partition as $\ell_0$ Homogeneity Pursuit}\label{sec:freq}
 
   Section~\ref{sec:bayes:sigmafixed} gave the model's MAP objective in general, the BIC-type criterion \eqref{eq:bic}. In the special case of a fixed $\sigma^{2}$ it takes an exact $\ell_0$ form, and we record that form here because it coincides with the $\ell_0$ homogeneity-pursuit estimators of the panel-data and statistics literatures and makes the connection concrete. Under the DP-induced prior $\Pr(\mathcal{P}) \propto \exp(-\lambda\,\#\{\text{cross-group pairs}\})$, the negative log-posterior is, up to a constant, $\mathrm{RSS}(\mathcal{P})/\sigma^{2} + 2\lambda\,\#\{\text{cross-group pairs}\}$, so scaling by $\sigma^{2}/2$ shows that the MAP partition minimizes the penalized residual sum of squares, which trades fit against an $\ell_0$ penalty on the number of cross-group CATT pairs, pairs of CATTs placed in different groups and hence estimated with different coefficients,
   \begin{equation}
@@ -1129,8 +1129,7 @@ DP posterior assigns a probability to every grouping and reports full uncertaint
 including the uncertainty in the grouping itself, and is the object we recommend
 for inference. Holding the error variance fixed, its maximum a posteriori
 partition coincides with an $\ell_0$-penalized estimator, a connection to
-the homogeneity-pursuit literature that we record as a remark rather than as a
-separate recommendation. As a secondary benefit, the
+the homogeneity-pursuit literature. As a secondary benefit, the
 partial-homogeneity restriction can also supply identifying information for a cell
 that lacks a clean comparison, though that identification rests entirely on the
 assumed grouping and is untestable for the cell that needs it.
