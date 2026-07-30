@@ -1065,7 +1065,7 @@ We obtain the $E = 138$ event-level effects from the authors' Harvard Dataverse 
 
 This places the application squarely in the low-separation regime that Section~\ref{sec:sim} identifies as the boundary of reliable recovery, and the estimators behave accordingly. The BIC-tuned $\ell_0$-PH estimator splits the events into five effect-ordered bands (of sizes $51$, $47$, $36$, $3$, $1$), and the Bayes-PH estimator returns between $2.7$ groups (parsimonious prior, $\alpha=1$) and $7.6$ groups ($\alpha=5$). As our simulations show, at a signal-to-noise ratio below one these ``groups'' are quantiles of noise rather than genuine effect clusters, and should not be interpreted as evidence of systematic heterogeneity; indeed, the formal test above finds none. The disagreement between the two estimators is itself a symptom of the regime.
 
-What is robust, and what matters for the applied conclusion, is that the overall average effect is invariant to the specification. Table~\ref{tab:cengiz:att} reports it, showing that the pooled, $\ell_0$, and Bayes-PH estimates of the population-weighted average employment effect are all near zero and mutually indistinguishable, and the DP posterior credible interval excludes economically meaningful disemployment. Allowing for arbitrary event-level heterogeneity does not overturn the near-zero net-employment finding of \citet{cengiz2019}; it confirms that the pooled specification is adequate for the aggregate. Figure~\ref{fig:cengiz} displays the 138 flexible event effects with the pooled effect superimposed.
+What is robust, and what matters for the applied conclusion, is that the overall average effect is invariant to the specification. Table~\ref{tab:cengiz:att} reports it, showing that the pooled, $\ell_0$, and Bayes-PH estimates of the population-weighted average employment effect are all near zero and mutually indistinguishable, and the DP posterior credible interval is a tight band of small positive values that excludes both zero and any economically meaningful disemployment, its narrowness reflecting the pooled precision rather than an economically important effect. Allowing for arbitrary event-level heterogeneity does not overturn the near-zero net-employment finding of \citet{cengiz2019}; it confirms that the pooled specification is adequate for the aggregate. Figure~\ref{fig:cengiz} displays the 138 flexible event effects with the pooled effect superimposed.
 
 \begin{table}[H]
     \centering
@@ -1156,6 +1156,14 @@ it where none exists.
 
 Several directions merit future work. First, the agglomerative algorithm is a heuristic; developing exact or near-exact algorithms for small $K$, or theoretical guarantees on approximation quality, would be valuable. Second, honest inference after partition selection deserves a fuller theoretical treatment, since the naive $\ell_0$-PH intervals are conditional on the selected grouping (Remark~\ref{rem:postselection}), so developing valid selective-inference corrections for them (the Bayesian posterior already propagates partition uncertainty) is an open problem. Third, formal asymptotic theory establishing consistency of the partition estimator, as both $N$ and the effective sample size per CATT grow, would solidify the method's theoretical foundations, and would formalize the separation threshold that our simulations identify as the determinant of the efficiency gain. Finally, whereas covariate adjustment in the outcome equation is immediate (Section~\ref{sec:problem}, equations~\eqref{eq:twfe_cov}--\eqref{eq:resid_cov}), letting observable characteristics inform the grouping itself, through a covariate-dependent partition prior, is a more substantial extension that could improve performance in settings with richer data.
 
+% =============================================================================
+% REFERENCES
+% =============================================================================
+\newpage
+\bibliographystyle{aer}
+\bibliography{references}
+
+\newpage
 \appendix
 
 \section{Identification under Limited Overlap}
@@ -1361,12 +1369,5 @@ The main text draws $\sigma^{2}$ from its inverse-gamma full conditional each sw
 \end{table}
 
 Table~\ref{tab:sigma} reports the result. The two samplers deliver essentially the same coverage and interval length, for the cohort-time effects and for the overall ATT. The reason is the one given in Section~\ref{sec:bayes:sigmafixed}, the residual degrees of freedom $NT - N - T + 1 - K$ are large, so $\sigma^{2}$ is pinned down and the estimation error a prior on it would propagate is negligible. The choice is therefore immaterial for the reported results, and we use the fixed-$\sigma^{2}$ case in the main text only to make the $\ell_0$ connection concrete.
-
-% =============================================================================
-% REFERENCES
-% =============================================================================
-\newpage
-\bibliographystyle{aer}
-\bibliography{references}
 
 \end{document}
