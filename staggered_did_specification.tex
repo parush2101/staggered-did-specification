@@ -571,7 +571,7 @@ The posterior mean of $\tau_{k}$ is
 
   The MAP and the posterior mean differ in what they report. The MAP is a single grouping of the cohort-time effects into a few distinct levels, the minimizer of the penalized residual sum of squares. The posterior mean, by contrast, averages over partitions and returns values that match no single grouping, so extracting a representative partition from it requires a separate loss-based summary of the co-clustering matrix.
 
-  We do not claim that the mode is a less biased point estimate than the posterior mean. Holding the regularization fixed, the two nearly coincide. In the $K=7$ application of Section~\ref{sec:cs_application}, at a common concentration $\alpha=1$ the posterior mean and the posterior mode of the overall effect are $-0.021$ and $-0.022$, essentially identical. The larger $-0.039$ from the BIC-tuned $\ell_0$-PH estimator reflects a weaker penalty, four groups rather than two, not the mode-versus-mean distinction. Choosing between the MAP and the posterior mean is therefore about whether a single partition or the full partition-averaged summary is wanted, not about small-sample bias, and inference should come from the posterior in either case.
+  We do not claim that the mode is a less biased point estimate than the posterior mean. Holding the regularization fixed, the two nearly coincide, so choosing between the MAP and the posterior mean is about whether a single partition or the full partition-averaged summary is wanted, not about small-sample bias, and inference should come from the posterior in either case.
 
   \begin{remark}[Inference after partition selection]
   \label{rem:postselection}
@@ -628,8 +628,8 @@ post-treatment cohort-time cells. Outcomes follow
 The unit and time fixed effects are removed by the within transformation, so the
 estimators' sampling behavior is driven entirely by $\varepsilon$.
 
-\paragraph{Partial-homogeneity truth and separation.}
-For a given number of distinct effects $m^{\ast}$, we partition the $K=18$ cells
+The partial-homogeneity truth is parameterized by the number of distinct effects
+and their separation. For a given number of distinct effects $m^{\ast}$, we partition the $K=18$ cells
 into $m^{\ast}$ near-equal groups and assign each group a mean on an evenly
 spaced grid with adjacent gap $\Delta$. We sweep
 $m^{\ast}\in\{1,3,6,9,18\}$, from fully homogeneous ($m^{\ast}=1$, where pooling
@@ -640,12 +640,11 @@ distance between adjacent group means in standard errors of the flexible
 cohort-time estimates; $\delta$ governs how easily the groups can be told apart.
 We report $\delta \in \{3,6,12\}$, with $\delta=6$ as the headline.
 
-\paragraph{Estimators.}
-We compare five estimators: pooled TWFE (the biased-but-precise benchmark);
-flexible TWFE (unbiased-but-imprecise; in this balanced design it coincides with
-the \citet{gardner2022two} two-stage estimator); the infeasible oracle
+We compare five estimators, pooled TWFE (the biased-but-precise benchmark),
+flexible TWFE (unbiased-but-imprecise, in this balanced design it coincides with
+the \citet{gardner2022two} two-stage estimator), the infeasible oracle
 partial-homogeneity estimator that is handed the true partition (the efficiency
-floor); the $\ell_0$-PH estimator; and the Bayes-PH estimator. The $\ell_0$ penalty is
+floor), the $\ell_0$-PH estimator, and the Bayes-PH estimator. The $\ell_0$ penalty is
 chosen by BIC \citep{schwarz1978} along the agglomeration path,
 $\mathrm{BIC}(m) = NT\log(\mathrm{RSS}(\hat{\mathcal P}_m)/NT) + m\log(NT)$,
 requiring no tuning grid. The DP sampler uses a diffuse base measure
