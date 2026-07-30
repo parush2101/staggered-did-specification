@@ -4,9 +4,16 @@
 .Rproj.user
 *.Rproj
 
-# Output files
-simulations/*.png
-simulations/*.pdf
+# LaTeX build artifacts
+*.aux
+*.log
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+*.toc
 
 # OS
 .DS_Store
