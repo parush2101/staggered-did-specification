@@ -383,7 +383,7 @@ principled answers.\footnote{Partial homogeneity also aids identification under 
 % 4. BAYESIAN APPROACH: DIRICHLET PROCESS MIXTURE
 % =============================================================================
   \section{A Bayesian Model for Partition Selection}\label{sec:bayes}
-  We develop the Dirichlet Process (DP) mixture model for the CATTs, specifying it in Section~\ref{sec:bayes:model}, estimating it with a collapsed Gibbs sampler in Section~\ref{sec:bayes:gibbs}, and recording the $\ell_0$ form of its maximum a posteriori partition in Section~\ref{sec:freq}.
+  We develop the Dirichlet Process (DP) mixture model for the CATTs, specifying it in Section~\ref{sec:bayes:model}, treating its error variance and the $\ell_0$ form of its maximum a posteriori partition in Section~\ref{sec:bayes:sigmafixed}, and estimating it with a collapsed Gibbs sampler in Section~\ref{sec:bayes:gibbs}.
 
   \subsection{Model Specification}\label{sec:bayes:model}
 
@@ -485,52 +485,9 @@ The complete hierarchical model places a conjugate prior on the error variance a
     \mathcal{P}^{\mathrm{MAP}} \;=\; \arg\min_{\mathcal{P}}\; NT\log\!\bigl(\mathrm{RSS}(\mathcal{P})/NT\bigr) \;-\; 2\log\Pr(\mathcal{P}),
     \label{eq:bic}
   \end{equation}
-  so the fit enters on the log scale, $\sigma^{2}$ is profiled out, and the complexity charge grows at the Schwarz $\log(NT)$ rate rather than being a fixed multiple of the RSS. Holding $\sigma^{2}$ fixed at the plug-in $\hat\sigma^{2} = \mathrm{RSS}_{\text{flex}}/(NT - N - T + 1 - K)$, the residual variance from the fully flexible regression \eqref{eq:twfe_flex}, is a useful special case. With $\sigma^{2}$ constant the model is Gaussian, the group-effect posterior \eqref{eq:bayes:phipost} is Normal, and the sampler draws partitions from the Gaussian marginal likelihood \eqref{eq:bayes:logmarg}. More to the point, it is the case under which the MAP partition is the exact $\ell_0$-penalized estimator of Section~\ref{sec:freq}, with the constant penalty $L = \lambda\sigma^{2}$, the connection to the homogeneity-pursuit literature that we record there. Because the residual degrees of freedom $NT - N - T + 1 - K$ are large, the fixed- and random-$\sigma^{2}$ versions deliver essentially the same coverage and interval length in our experiments (Appendix~\ref{app:sigma}), so the choice is immaterial for the reported results and we use the fixed case only to make the $\ell_0$ link concrete. The homoskedastic assumption itself can be relaxed, and Appendix~\ref{app:hetero} extends the model to a heterogeneous error covariance and augments the sampler with a Gibbs update for group-specific error variances.
+  so the fit enters on the log scale, $\sigma^{2}$ is profiled out, and the complexity charge grows at the Schwarz $\log(NT)$ rate rather than being a fixed multiple of the RSS. Holding $\sigma^{2}$ fixed at the plug-in $\hat\sigma^{2} = \mathrm{RSS}_{\text{flex}}/(NT - N - T + 1 - K)$, the residual variance from the fully flexible regression \eqref{eq:twfe_flex}, is a useful special case. With $\sigma^{2}$ constant the model is Gaussian, the group-effect posterior \eqref{eq:bayes:phipost} is Normal, and the sampler draws partitions from the Gaussian marginal likelihood \eqref{eq:bayes:logmarg}. Because the residual degrees of freedom $NT - N - T + 1 - K$ are large, the fixed- and random-$\sigma^{2}$ versions deliver essentially the same coverage and interval length in our experiments (Appendix~\ref{app:sigma}), so the choice is immaterial for the reported results. The homoskedastic assumption itself can be relaxed, and Appendix~\ref{app:hetero} extends the model to a heterogeneous error covariance and augments the sampler with a Gibbs update for group-specific error variances.
 
-  \subsection{Estimation and Inference}\label{sec:bayes:gibbs}
-
-  We sample from the posterior $\Pr(\mathcal{P} \mid \tilde{y}) \propto p(\tilde{y} \mid \mathcal{P})\Pr(\mathcal{P})$ using the
-  collapsed Gibbs sampler of \citet{neal2000} (Algorithm~3), which integrates $\phi$ out analytically at each cluster-assignment
-  step and reinstates it via a conjugate draw at the end of every sweep. At each iteration, we cycle over all $K$ CATTs. For CATT
-   $k$:
-  \begin{enumerate}
-  \item Remove $k$ from its current cluster; delete the cluster if empty.
-  \item For each existing cluster $c$ and for a new cluster, compute the conditional probability
-  \begin{equation}
-    \Pr(z_{k} = c \mid z_{-k},\tilde{y}) \;\propto\;
-    \begin{cases}
-      n_{-k,c}\,\times\, p(\tilde{y} \mid z_{k} = c,\, z_{-k}), & \text{existing,}\\[4pt]
-      \alpha\,\times\, p(\tilde{y} \mid z_{k} = c_{\text{new}},\, z_{-k}), & \text{new,}
-    \end{cases},
-    \label{eq:bayes:condprob}
-  \end{equation}
-  where the marginal likelihoods are computed via \eqref{eq:bayes:logmarg}.
-  \item Draw $z_{k}$ from the normalized probabilities \eqref{eq:bayes:condprob}.
-  \end{enumerate}
-  After updating all cluster assignments, draw $\phi$ from the conjugate posterior
-  $N(\mu^{\ast},\Sigma^{\ast})$. The sequence of draws $\{z^{(s)},\phi^{(s)}\}_{s=1}^{S}$
-  approximates the posterior.
-
-
-The posterior mean of $\tau_{k}$ is
-  \begin{equation}
-    \hat{\tau}_{k}^{\,\text{Bayes}} \;=\; (S-S_B)^{-1}\sum_{s = S_B}^{S}\,\phi^{(s)}_{z_{k}^{(s)}},
-    \label{eq:bayes:tauhat}
-  \end{equation}
-  where $S_B$ is the burn-in sample. The $95\%$ credible interval is obtained from the empirical quantiles of the draws. The co-clustering probability
-  \begin{equation}
-    \hat{\pi}_{jk} \;=\; S^{-1}\sum_{s = 1}^{S}\, \mathbf{1}\!\bigl\{z_{j}^{(s)} = z_{k}^{(s)}\bigr\}
-    \label{eq:bayes:cocluster}
-  \end{equation}
-  gives the posterior probability that CATTs $j$ and $k$ belong to the same group. The $K \times K$ matrix $\hat{\Pi} = [\hat{\pi}_{jk}]$ is the posterior similarity matrix, summarizing the full uncertainty over the grouping structure; when a single representative partition is desired, it can be obtained from the posterior together with a credible region using the loss-based summaries of \citet{lau2007} and \citet{wade2018}. Aggregated estimands (e.g.\ the overall ATT or event-study coefficients) are computed by applying the linear aggregator of interest to each posterior draw and summarizing across the chain, which delivers uncertainty quantification that incorporates the uncertainty in the partition itself.
-
-  The full posterior is the object we use for inference. Before turning to the evidence, we record an observation that connects the model to the homogeneity-pursuit literature. Its most probable partition, the maximum a posteriori (MAP) estimate, has a penalized-regression form, which we develop next.
-% =============================================================================
-% 4. THE MAP PARTITION: L_0 PENALIZED SUMMARY
-% =============================================================================
-\subsection{The MAP Partition as $\ell_0$ Homogeneity Pursuit}\label{sec:freq}
-
-  Section~\ref{sec:bayes:sigmafixed} gave the model's MAP objective in general, the BIC-type criterion \eqref{eq:bic}. In the special case of a fixed $\sigma^{2}$ it takes an exact $\ell_0$ form, and we record that form here because it coincides with the $\ell_0$ homogeneity-pursuit estimators of the panel-data and statistics literatures and makes the connection concrete. Under the DP-induced prior $\Pr(\mathcal{P}) \propto \exp(-\lambda\,\#\{\text{cross-group pairs}\})$, the negative log-posterior is, up to a constant, $\mathrm{RSS}(\mathcal{P})/\sigma^{2} + 2\lambda\,\#\{\text{cross-group pairs}\}$, so scaling by $\sigma^{2}/2$ shows that the MAP partition minimizes the penalized residual sum of squares, which trades fit against an $\ell_0$ penalty on the number of cross-group CATT pairs, pairs of CATTs placed in different groups and hence estimated with different coefficients,
+  The fixed-$\sigma^{2}$ case is also the one under which the MAP partition takes an exact $\ell_0$ form, coinciding with the $\ell_0$ homogeneity-pursuit estimators of the panel-data and statistics literatures. Under the DP-induced prior $\Pr(\mathcal{P}) \propto \exp(-\lambda\,\#\{\text{cross-group pairs}\})$, the negative log-posterior is, up to a constant, $\mathrm{RSS}(\mathcal{P})/\sigma^{2} + 2\lambda\,\#\{\text{cross-group pairs}\}$, so scaling by $\sigma^{2}/2$ shows that the MAP partition minimizes the penalized residual sum of squares, which trades fit against an $\ell_0$ penalty on the number of cross-group CATT pairs, pairs of CATTs placed in different groups and hence estimated with different coefficients,
   \begin{equation}
   Q(\mathcal{P}) \;=\; \underbrace{\sum_i \sum_t \Bigl(Y_{igt} - \alpha_i - \gamma_t - \sum_{g \in \mathcal{G}}\sum_{t \geq g}
   \tau_{gt}\, D_{igt}\Bigr)^2}_{\mathrm{RSS}(\mathcal{P})} \;+\; \underbrace{\sum_{g \neq g'} \lambda\,\mathbf{1}[\tau_{gt} \neq
@@ -569,7 +526,44 @@ The posterior mean of $\tau_{k}$ is
 
   Computing the estimator takes two steps, an agglomerative search that returns $\hat{\mathcal{P}}$ in $O(K^3)$ time and an ordinary least squares re-estimation of the grouped model under $\hat{\mathcal{P}}$.\footnote{Appendix~\ref{app:algorithm} gives the agglomerative merge criterion and the re-estimation, and explains why the second step is needed. The agglomerative search minimizes an orthogonal approximation to the objective, and its pooled coefficients equal the restricted OLS only when the within-transformed cohort-time dummies are orthogonal, so the OLS re-estimation recovers the BLUE in general panels.}
 
-  The MAP and the posterior mean differ in what they report. The MAP is a single grouping of the cohort-time effects into a few distinct levels, the minimizer of the penalized residual sum of squares. The posterior mean, by contrast, averages over partitions and returns values that match no single grouping, so extracting a representative partition from it requires a separate loss-based summary of the co-clustering matrix.
+  \subsection{Estimation and Inference}\label{sec:bayes:gibbs}
+
+  We sample from the posterior $\Pr(\mathcal{P} \mid \tilde{y}) \propto p(\tilde{y} \mid \mathcal{P})\Pr(\mathcal{P})$ using the
+  collapsed Gibbs sampler of \citet{neal2000} (Algorithm~3), which integrates $\phi$ out analytically at each cluster-assignment
+  step and reinstates it via a conjugate draw at the end of every sweep. At each iteration, we cycle over all $K$ CATTs. For CATT
+   $k$:
+  \begin{enumerate}
+  \item Remove $k$ from its current cluster; delete the cluster if empty.
+  \item For each existing cluster $c$ and for a new cluster, compute the conditional probability
+  \begin{equation}
+    \Pr(z_{k} = c \mid z_{-k},\tilde{y}) \;\propto\;
+    \begin{cases}
+      n_{-k,c}\,\times\, p(\tilde{y} \mid z_{k} = c,\, z_{-k}), & \text{existing,}\\[4pt]
+      \alpha\,\times\, p(\tilde{y} \mid z_{k} = c_{\text{new}},\, z_{-k}), & \text{new,}
+    \end{cases},
+    \label{eq:bayes:condprob}
+  \end{equation}
+  where the marginal likelihoods are computed via \eqref{eq:bayes:logmarg}.
+  \item Draw $z_{k}$ from the normalized probabilities \eqref{eq:bayes:condprob}.
+  \end{enumerate}
+  After updating all cluster assignments, draw $\phi$ from the conjugate posterior
+  $N(\mu^{\ast},\Sigma^{\ast})$. The sequence of draws $\{z^{(s)},\phi^{(s)}\}_{s=1}^{S}$
+  approximates the posterior.
+
+
+The posterior mean of $\tau_{k}$ is
+  \begin{equation}
+    \hat{\tau}_{k}^{\,\text{Bayes}} \;=\; (S-S_B)^{-1}\sum_{s = S_B}^{S}\,\phi^{(s)}_{z_{k}^{(s)}},
+    \label{eq:bayes:tauhat}
+  \end{equation}
+  where $S_B$ is the burn-in sample. The $95\%$ credible interval is obtained from the empirical quantiles of the draws. The co-clustering probability
+  \begin{equation}
+    \hat{\pi}_{jk} \;=\; S^{-1}\sum_{s = 1}^{S}\, \mathbf{1}\!\bigl\{z_{j}^{(s)} = z_{k}^{(s)}\bigr\}
+    \label{eq:bayes:cocluster}
+  \end{equation}
+  gives the posterior probability that CATTs $j$ and $k$ belong to the same group. The $K \times K$ matrix $\hat{\Pi} = [\hat{\pi}_{jk}]$ is the posterior similarity matrix, summarizing the full uncertainty over the grouping structure; when a single representative partition is desired, it can be obtained from the posterior together with a credible region using the loss-based summaries of \citet{lau2007} and \citet{wade2018}. Aggregated estimands (e.g.\ the overall ATT or event-study coefficients) are computed by applying the linear aggregator of interest to each posterior draw and summarizing across the chain, which delivers uncertainty quantification that incorporates the uncertainty in the partition itself.
+
+  The MAP partition of Section~\ref{sec:bayes:sigmafixed} and the posterior mean differ in what they report. The MAP is a single grouping of the cohort-time effects into a few distinct levels, the minimizer of the penalized residual sum of squares. The posterior mean, by contrast, averages over partitions and returns values that match no single grouping, so extracting a representative partition from it requires a separate loss-based summary of the co-clustering matrix.
 
   We do not claim that the mode is a less biased point estimate than the posterior mean. Holding the regularization fixed, the two nearly coincide, so choosing between the MAP and the posterior mean is about whether a single partition or the full partition-averaged summary is wanted, not about small-sample bias, and inference should come from the posterior in either case.
 
@@ -1328,7 +1322,7 @@ The group-effect posterior \eqref{eq:bayes:phipost} becomes $\phi\mid\mathcal P,
 \end{equation}
 which is the ridge-regularized GLS estimator of the group effects. Setting $\Omega=\sigma^2 I_{NT}$ gives $S=\tilde D'\tilde D/\sigma^2$ and $u=\tilde D'\tilde Y/\sigma^2$ and recovers \eqref{eq:bayes:logmarg} and \eqref{eq:bayes:phipost} exactly. The computational cost is unchanged, the $m\times m$ matrix $S$ still governs the calculation, and forming it costs one weighting of the design by $\Omega^{-1}$, which is $O(NT)$ for the diagonal case \eqref{eq:het:cov}.
 
-One feature of the fixed-$\sigma^2$ theory does not survive. The exact $\ell_0$ correspondence of Section~\ref{sec:freq}, in which the MAP partition minimizes the residual sum of squares plus a fixed penalty $L=\lambda\sigma^2$ per group, relied on the scalar variance factoring out of the objective. Under \eqref{eq:het:cov} the fit term is the $\Omega^{-1}$-weighted sum of squares and the variance levels also enter through $\log|\Omega|$, so the penalty is no longer a fixed multiple of a residual sum of squares. Heterogeneous errors are therefore handled inside the sampler, which averages over the variance levels along with the partition, rather than by the fixed-penalty point estimator.
+One feature of the fixed-$\sigma^2$ theory does not survive. The exact $\ell_0$ correspondence of Section~\ref{sec:bayes:sigmafixed}, in which the MAP partition minimizes the residual sum of squares plus a fixed penalty $L=\lambda\sigma^2$ per group, relied on the scalar variance factoring out of the objective. Under \eqref{eq:het:cov} the fit term is the $\Omega^{-1}$-weighted sum of squares and the variance levels also enter through $\log|\Omega|$, so the penalty is no longer a fixed multiple of a residual sum of squares. Heterogeneous errors are therefore handled inside the sampler, which averages over the variance levels along with the partition, rather than by the fixed-penalty point estimator.
 
 \paragraph{The augmented Gibbs sampler.} The collapsed sampler of Section~\ref{sec:bayes:gibbs} gains one block. Given a current $\Omega$, one sweep runs the following three steps.
 \begin{enumerate}
